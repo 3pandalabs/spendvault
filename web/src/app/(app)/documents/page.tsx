@@ -165,7 +165,7 @@ function DocRow({ d, onChange }: { d: Document; onChange: (d: Document | null) =
     d.periodStart && d.periodEnd ? `${fmtDate(d.periodStart)} – ${fmtDate(d.periodEnd)}` : d.periodEnd ? fmtDate(d.periodEnd) : null;
 
   return (
-    <li className="rounded-2xl border border-line bg-white p-4">
+    <li className="rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-4">
       <div className="flex gap-3">
         <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-bg-subtle text-fg-muted" title={src.label}>
           <Icon className="size-4" aria-hidden />
@@ -204,7 +204,7 @@ function DocRow({ d, onChange }: { d: Document; onChange: (d: Document | null) =
                   <CheckCircle2 className="size-3.5" /> Totals match
                 </span>
               ) : d.reconciled === false ? (
-                <span className="text-amber-700" title="The transactions we read don't add up to the statement total. Some lines may be missing.">
+                <span className="text-amber-300" title="The transactions we read don't add up to the statement total. Some lines may be missing.">
                   Totals don&apos;t match
                 </span>
               ) : null}
@@ -214,13 +214,13 @@ function DocRow({ d, onChange }: { d: Document; onChange: (d: Document | null) =
 
           {d.status === "needs_password" ? (
             <form
-              className="mt-3 space-y-2 rounded-xl bg-amber-50 p-3"
+              className="mt-3 space-y-2 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3"
               onSubmit={(e) => {
                 e.preventDefault();
                 if (password) retry(true);
               }}
             >
-              <p className="flex items-center gap-1.5 text-sm font-medium text-amber-900">
+              <p className="flex items-center gap-1.5 text-sm font-medium text-amber-200">
                 <KeyRound className="size-4" /> This PDF is password-protected
               </p>
               <div className="flex gap-2">
@@ -236,7 +236,7 @@ function DocRow({ d, onChange }: { d: Document; onChange: (d: Document | null) =
                   {busy === "retry" ? <Spinner /> : null} Unlock
                 </Button>
               </div>
-              <label className="flex items-center gap-2 text-sm text-amber-900">
+              <label className="flex items-center gap-2 text-sm text-amber-200">
                 <input type="checkbox" className="size-4 accent-accent" checked={savePassword} onChange={(e) => setSavePassword(e.target.checked)} />
                 Save password (encrypted) for future statements from this bank
               </label>
@@ -254,8 +254,8 @@ function DocRow({ d, onChange }: { d: Document; onChange: (d: Document | null) =
                 <Trash2 /> Delete
               </Button>
             ) : (
-              <div className="flex w-full flex-wrap items-center gap-3 rounded-xl bg-rose-50 p-3 text-sm">
-                <span className="font-medium text-rose-900">Delete this document?</span>
+              <div className="flex w-full flex-wrap items-center gap-3 rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm">
+                <span className="font-medium text-red-200">Delete this document?</span>
                 <label className="flex items-center gap-2">
                   <input type="checkbox" className="size-4 accent-red-600" checked={deleteTxns} onChange={(e) => setDeleteTxns(e.target.checked)} />
                   Also delete its {d.txnCount ? `${d.txnCount} ` : ""}transactions

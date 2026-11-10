@@ -31,7 +31,7 @@ function Form() {
   if (done) {
     return (
       <div className="space-y-4">
-        <div className="flex items-start gap-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">
+        <div className="flex items-start gap-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-200">
           <CheckCircle2 className="mt-0.5 size-5 shrink-0" />
           <p>Password changed. Sign in with the new one.</p>
         </div>
@@ -105,7 +105,7 @@ function Form() {
 export default function ResetPasswordPage() {
   return (
     <>
-      <h1 className="mb-5 text-lg font-semibold">Choose a new password</h1>
+      <h1 className="mb-5 text-xl font-semibold">Choose a new password</h1>
       <Suspense fallback={null}>
         <Form />
       </Suspense>

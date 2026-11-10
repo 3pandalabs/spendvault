@@ -34,7 +34,7 @@ function Form() {
   if (sent) {
     return (
       <div className="space-y-4">
-        <div className="flex items-start gap-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">
+        <div className="flex items-start gap-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-200">
           <MailCheck className="mt-0.5 size-5 shrink-0" />
           <p>
             If <span className="font-medium">{email}</span> has an account, a reset link is on its way.
@@ -68,7 +68,7 @@ function Form() {
 export default function ForgotPasswordPage() {
   return (
     <>
-      <h1 className="text-lg font-semibold">Reset your password</h1>
+      <h1 className="text-xl font-semibold">Reset your password</h1>
       <p className="mb-5 text-sm text-fg-muted">We&apos;ll email you a link to choose a new one.</p>
       <Suspense fallback={null}>
         <Form />

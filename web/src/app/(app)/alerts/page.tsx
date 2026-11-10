@@ -105,7 +105,7 @@ export default function AlertsPage() {
 function AlertCard({ a, cur, onDismiss }: { a: Alert; cur: string; onDismiss: () => void }) {
   const change = a.amount != null && a.baseline ? pctChange(a.amount, a.baseline) : null;
   return (
-    <li className={cn("flex gap-3 rounded-2xl border border-line bg-white p-4", a.dismissedAt && "opacity-60")}>
+    <li className={cn("flex gap-3 rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-4", a.dismissedAt && "opacity-60")}>
       <AlertIcon kind={a.kind} />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">

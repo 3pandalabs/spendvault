@@ -7,7 +7,7 @@ const svg = readFileSync(new URL("../src/app/icon.svg", import.meta.url));
 // Maskable icons need the artwork inside the central 80% safe zone on a full-bleed background.
 const inner = svg.toString().replace('rx="112"', 'rx="0"');
 const maskable = Buffer.from(
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#4338ca"/>` +
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#09090b"/>` +
     `<g transform="translate(64 64) scale(0.75)">${inner.replace(/<\/?svg[^>]*>/g, "")}</g></svg>`,
 );
 

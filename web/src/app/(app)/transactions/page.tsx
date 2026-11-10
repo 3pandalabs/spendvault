@@ -96,7 +96,7 @@ function Transactions() {
       <PageHeader title="Transactions" subtitle="Every line from your statements and alerts. Fix a category and we'll remember it." />
 
       {/* Filters */}
-      <div className="mb-4 space-y-3 rounded-2xl border border-line bg-white p-3 sm:p-4">
+      <div className="mb-4 space-y-3 rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-3 sm:p-4">
         <SearchBox initial={filter.q ?? ""} onSearch={(q) => setFilter({ q: q || undefined })} key={filter.q ?? ""} />
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           <select
@@ -168,7 +168,7 @@ function Transactions() {
           </div>
         </details>
         {hasFilters ? (
-          <button className="inline-flex items-center gap-1 text-sm text-accent hover:underline" onClick={() => router.replace("/transactions")}>
+          <button className="inline-flex items-center gap-1 text-sm text-accent-strong hover:underline" onClick={() => router.replace("/transactions")}>
             <X className="size-3.5" /> Clear filters
           </button>
         ) : null}
@@ -197,7 +197,7 @@ function Transactions() {
         />
       ) : (
         <>
-          <div className={cn("overflow-hidden rounded-2xl border border-line bg-white", first.loading && "opacity-60")}>
+          <div className={cn("overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm", first.loading && "opacity-60")}>
             <div className="hidden grid-cols-[7rem_minmax(0,1fr)_14rem_8rem] gap-3 border-b border-line bg-bg-subtle px-4 py-2 text-xs font-medium text-fg-muted md:grid">
               <span>Date</span>
               <span>Merchant</span>
@@ -365,7 +365,7 @@ function TxnRow({
               {busy ? <Spinner /> : null} Save
             </Button>
           </div>
-          {error ? <p className="w-full text-sm text-red-700">{error}</p> : null}
+          {error ? <p className="w-full text-sm text-red-300">{error}</p> : null}
         </div>
       ) : null}
     </li>

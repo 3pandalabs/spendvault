@@ -173,7 +173,7 @@ function DeletePanel({ onDeleted }: { onDeleted: () => void }) {
   }
 
   return (
-    <Panel className="border-rose-200">
+    <Panel className="border-red-400/30">
       <PanelTitle>Delete account</PanelTitle>
       <p className="text-sm text-fg-muted">
         Permanently deletes your account and everything in it: documents, transactions, saved passwords, alerts and your WhatsApp link. This

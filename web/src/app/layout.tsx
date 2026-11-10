@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { RegisterSW } from "@/components/RegisterSW";
-import { geistSans } from "@/lib/fonts";
+import { GradientBackdrop } from "@/components/GradientBackdrop";
+import { inter } from "@/lib/fonts";
 import { SITE_URL } from "@/lib/site";
 
 const TITLE = "SpendVault: every card and bank account, one spending dashboard";
@@ -13,13 +14,14 @@ export const metadata: Metadata = {
   title: { default: TITLE, template: "%s · SpendVault" },
   description: DESCRIPTION,
   applicationName: "SpendVault",
-  appleWebApp: { capable: true, title: "SpendVault", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "SpendVault", statusBarStyle: "black" },
   openGraph: { type: "website", siteName: "SpendVault", locale: "en_IN", url: SITE_URL, title: TITLE, description: DESCRIPTION },
   twitter: { card: "summary", title: TITLE, description: DESCRIPTION },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#4338ca",
+  themeColor: "#09090b",
+  colorScheme: "dark",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -28,7 +30,8 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-IN">
-      <body className={`min-h-screen antialiased ${geistSans.variable}`}>
+      <body className={`min-h-screen bg-zinc-950 text-zinc-100 antialiased ${inter.variable}`}>
+        <GradientBackdrop />
         {children}
         <RegisterSW />
       </body>

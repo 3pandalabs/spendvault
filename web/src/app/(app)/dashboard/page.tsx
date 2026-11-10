@@ -9,7 +9,7 @@ import { BarChart, Delta, HBarList, ShareStrip } from "@/components/charts";
 import { EmptyState, LoadError, PageHeader, Panel, PanelTitle, Skeleton, selectClass } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { getDashboard } from "@/lib/api";
-import { categoryColor, categoryLabel } from "@/lib/categories";
+import { ACCOUNT_COLORS, categoryColor, categoryLabel } from "@/lib/categories";
 import { fmtDay, fmtMonth, fmtMonthShort, fmtTimestamp, money, monthRange } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
 import { useSession } from "@/lib/session";
@@ -132,7 +132,7 @@ function DashboardBody({ d }: { d: Dashboard }) {
         <Panel className="lg:col-span-3">
           <PanelTitle
             aside={
-              <Link href={`/transactions?from=${range.from}&to=${range.to}`} className="text-sm text-accent hover:underline">
+              <Link href={`/transactions?from=${range.from}&to=${range.to}`} className="text-sm text-accent-strong hover:underline">
                 All transactions
               </Link>
             }
@@ -165,7 +165,7 @@ function DashboardBody({ d }: { d: Dashboard }) {
         <Panel className="lg:col-span-2">
           <PanelTitle
             aside={
-              <Link href="/alerts" className="text-sm text-accent hover:underline">
+              <Link href="/alerts" className="text-sm text-accent-strong hover:underline">
                 See all
               </Link>
             }
@@ -228,7 +228,7 @@ function DashboardBody({ d }: { d: Dashboard }) {
               data={d.trend.map((x) => ({ key: x.month, label: fmtMonth(x.month), tick: fmtMonthShort(x.month).slice(0, 3), value: x.spend }))}
               tickEvery={d.trend.length > 8 ? 2 : 1}
               selected={d.month}
-              color="#818cf8"
+              color="#a78bfa"
               highlight={(x) => x.key === d.month}
               refLine={t.avg3MonthSpend || undefined}
               refLabel="3-month average"
@@ -265,7 +265,7 @@ function DashboardBody({ d }: { d: Dashboard }) {
       <Panel>
         <PanelTitle
           aside={
-            <Link href="/documents" className="inline-flex items-center gap-1 text-sm text-accent hover:underline">
+            <Link href="/documents" className="inline-flex items-center gap-1 text-sm text-accent-strong hover:underline">
               <RefreshCw className="size-3.5" /> Add statements
             </Link>
           }
@@ -281,7 +281,7 @@ function DashboardBody({ d }: { d: Dashboard }) {
               key: a.accountId || `acct-${i}`,
               label: a.label,
               amount: a.amount,
-              color: ["#4338ca", "#0c8599", "#d6336c", "#e8590c", "#2f9e44", "#9c36b5"][i % 6],
+              color: ACCOUNT_COLORS[i % ACCOUNT_COLORS.length],
             }))}
           />
         )}

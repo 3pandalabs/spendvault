@@ -169,7 +169,7 @@ export function BarChart({
                     height={Math.max(d.value > 0 ? 0.8 : 0, h)}
                     rx={n > 20 ? 0.3 : 0.8}
                     fill={hl ? "var(--up)" : color}
-                    opacity={hover == null || hover === i || isSel ? 1 : 0.55}
+                    opacity={hover == null || hover === i || isSel ? 1 : 0.45}
                     pointerEvents="none"
                   />
                 </g>
@@ -206,7 +206,7 @@ export function BarChart({
           </div>
           {active ? (
             <div
-              className="pointer-events-none absolute -top-2 z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md bg-fg px-2 py-1 text-xs text-white shadow"
+              className="pointer-events-none absolute -top-2 z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md border border-white/10 bg-zinc-900 px-2 py-1 text-xs text-zinc-100 shadow-lg shadow-black/40"
               style={{ left: `${Math.min(88, Math.max(12, ((hover! + 0.5) / n) * 100))}%` }}
               role="status"
             >

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
+import { fieldBase } from "./ui/input";
 
 export function PageHeader({
   title,
@@ -28,7 +29,7 @@ export function PageHeader({
 
 export function Loading({ label = "Loading…" }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2 py-10 text-sm text-fg-muted" role="status">
+    <div className="flex items-center gap-2 py-10 text-sm text-zinc-500" role="status">
       <Loader2 className="size-4 animate-spin" /> {label}
     </div>
   );
@@ -41,7 +42,7 @@ export function Spinner({ className }: { className?: string }) {
 export function ErrorText({ children }: { children: React.ReactNode }) {
   if (!children) return null;
   return (
-    <p role="alert" className="text-sm text-red-700">
+    <p role="alert" className="text-sm text-red-300">
       {children}
     </p>
   );
@@ -50,7 +51,7 @@ export function ErrorText({ children }: { children: React.ReactNode }) {
 /** A load failure always offers a retry, never a dead end. */
 export function LoadError({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   return (
-    <div className="my-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900" role="alert">
+    <div className="my-4 rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-200" role="alert">
       <p className="flex items-center gap-2">
         <AlertTriangle className="size-4 shrink-0" /> {errorMessage(error)}
       </p>
@@ -76,8 +77,8 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center rounded-2xl border border-dashed border-line-strong bg-white px-6 py-10 text-center">
-      {icon ? <div className="mb-3 text-fg-muted [&_svg]:size-8">{icon}</div> : null}
+    <div className="flex flex-col items-center rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-6 py-10 text-center backdrop-blur-sm">
+      {icon ? <div className="mb-3 text-amber-300/80 [&_svg]:size-8">{icon}</div> : null}
       <p className="font-medium text-fg">{title}</p>
       {body ? <p className="mt-1 max-w-md text-sm text-fg-muted">{body}</p> : null}
       {action ? <div className="mt-4 flex flex-wrap justify-center gap-2">{action}</div> : null}
@@ -86,7 +87,7 @@ export function EmptyState({
 }
 
 export function Panel({ className, ...props }: React.HTMLAttributes<HTMLElement>) {
-  return <section className={cn("min-w-0 rounded-2xl border border-line bg-white p-4 sm:p-5", className)} {...props} />;
+  return <section className={cn("min-w-0 rounded-xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-sm sm:p-5", className)} {...props} />;
 }
 
 export function PanelTitle({ children, aside }: { children: React.ReactNode; aside?: React.ReactNode }) {
@@ -115,17 +116,16 @@ export function Field({
 }) {
   return (
     <div className={cn("space-y-1.5", className)}>
-      <label htmlFor={htmlFor} className="text-sm font-medium leading-none text-fg">
+      <label htmlFor={htmlFor} className="text-sm font-medium leading-none text-zinc-300">
         {label}
       </label>
       {children}
-      {error ? <p className="text-xs text-red-700">{error}</p> : hint ? <p className="text-xs text-fg-muted">{hint}</p> : null}
+      {error ? <p className="text-xs text-red-300">{error}</p> : hint ? <p className="text-xs text-zinc-500">{hint}</p> : null}
     </div>
   );
 }
 
-export const selectClass =
-  "flex h-10 w-full rounded-lg border border-line-strong bg-white px-3 py-2 text-base text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 md:text-sm";
+export const selectClass = `${fieldBase} flex h-10`;
 
 export function CopyButton({ value, label = "Copy", className }: { value: string; label?: string; className?: string }) {
   const [done, setDone] = useState(false);
@@ -182,13 +182,13 @@ export function Toggle({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(
-          "relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50",
-          checked ? "bg-accent" : "bg-zinc-300",
+          "relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:opacity-50",
+          checked ? "bg-amber-400" : "bg-white/15",
         )}
       >
         <span
           className={cn(
-            "inline-block size-5 rounded-full bg-white shadow transition-transform",
+            "inline-block size-5 rounded-full shadow transition-transform", checked ? "bg-zinc-950" : "bg-zinc-300",
             checked ? "translate-x-5" : "translate-x-0.5",
           )}
         />
@@ -198,5 +198,5 @@ export function Toggle({
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn("animate-pulse rounded-lg bg-zinc-200/70", className)} aria-hidden />;
+  return <div className={cn("animate-pulse rounded-lg bg-white/[0.06]", className)} aria-hidden />;
 }
