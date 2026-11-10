@@ -118,12 +118,12 @@ function ForwardingCard() {
           </div>
 
           {f.confirmations.length > 0 ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-              <p className="text-sm font-medium text-amber-900">Gmail sent a confirmation code</p>
-              <p className="text-sm text-amber-900/80">Paste it into Gmail&apos;s forwarding settings, or open the confirm link.</p>
+            <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">
+              <p className="text-sm font-medium text-amber-200">Gmail sent a confirmation code</p>
+              <p className="text-sm text-amber-200/80">Paste it into Gmail&apos;s forwarding settings, or open the confirm link.</p>
               <ul className="mt-3 space-y-3">
                 {f.confirmations.map((c) => (
-                  <li key={c.id} className="rounded-lg bg-white p-3">
+                  <li key={c.id} className="rounded-lg bg-white/5 p-3">
                     {c.code ? (
                       <div className="flex flex-wrap items-center gap-3">
                         <span className="font-mono text-3xl font-semibold tracking-widest tabular">{c.code}</span>
@@ -135,7 +135,7 @@ function ForwardingCard() {
                         href={c.confirmUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline"
+                        className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-accent-strong hover:underline"
                       >
                         Open the confirm link <ExternalLink className="size-3.5" />
                       </a>
@@ -174,7 +174,7 @@ function ForwardingCard() {
           <p className="text-xs text-fg-muted">
             Tip: in the filter, also tick &ldquo;Also apply filter to matching conversations&rdquo; only if you want old statements imported too.
             Gmail forwards only new mail; for older statements, forward them by hand or upload them in{" "}
-            <Link href="/documents" className="text-accent hover:underline">
+            <Link href="/documents" className="text-accent-strong hover:underline">
               Documents
             </Link>
             .
@@ -298,7 +298,7 @@ function PasswordsCard() {
           </Field>
         </div>
         {selected?.passwordHint ? (
-          <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+          <p className="rounded-lg border border-sky-400/30 bg-sky-400/10 p-3 text-sm text-sky-200">
             <span className="font-medium">{selected.name}:</span> {selected.passwordHint}. Check the email your statement came in; banks
             spell out the format there.
           </p>
@@ -400,7 +400,7 @@ function WhatsappCard() {
           </div>
           {waDigits ? (
             <a href={`https://wa.me/${waDigits}?text=${encodeURIComponent(link.code)}`} target="_blank" rel="noopener noreferrer">
-              <Button className="bg-[#1a7f4b]">
+              <Button className="bg-[#1a7f4b] text-white hover:bg-[#166b3f]">
                 <MessageCircle /> Open WhatsApp
               </Button>
             </a>

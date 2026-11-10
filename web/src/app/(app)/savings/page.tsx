@@ -55,13 +55,13 @@ function SavingsBody({ s }: { s: Savings }) {
   const subsAnnual = s.subscriptions.reduce((n, x) => n + x.annualCost, 0);
   return (
     <div className="space-y-4">
-      <Panel className="bg-gradient-to-br from-accent to-indigo-800 text-white">
-        <p className="text-sm text-white/80">You could save about</p>
-        <p className="mt-1 text-4xl font-semibold tracking-tight tabular">
+      <Panel className="border-amber-400/20 bg-amber-400/[0.04]">
+        <p className="font-mono text-xs tracking-widest text-amber-300/80 uppercase">You could save about</p>
+        <p className="mt-2 text-4xl font-semibold tracking-tight text-amber-200 tabular">
           {money(s.estimatedMonthlySavings, cur)}
-          <span className="text-lg font-normal text-white/80"> / month</span>
+          <span className="text-lg font-normal text-zinc-400"> / month</span>
         </p>
-        <p className="mt-1 text-sm text-white/80">
+        <p className="mt-1 text-sm text-zinc-400">
           That&apos;s {money(s.estimatedMonthlySavings * 12, cur)} a year, if you act on the suggestions below.
         </p>
       </Panel>
@@ -72,7 +72,7 @@ function SavingsBody({ s }: { s: Savings }) {
           <ul className="divide-y divide-line">
             {s.tips.map((t) => (
               <li key={t.id} className="flex gap-3 py-3">
-                <span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-700">
+                <span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-400/10 text-amber-300">
                   <Lightbulb className="size-4" aria-hidden />
                 </span>
                 <div className="min-w-0 flex-1">

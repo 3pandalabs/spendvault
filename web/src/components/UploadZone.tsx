@@ -58,7 +58,7 @@ export function UploadZone({ onUploaded }: { onUploaded: (docs: Document[]) => v
   }
 
   return (
-    <div className="rounded-2xl border border-line bg-white p-4">
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-sm">
       <div
         role="button"
         tabIndex={0}
@@ -77,10 +77,10 @@ export function UploadZone({ onUploaded }: { onUploaded: (docs: Document[]) => v
         }}
         className={cn(
           "flex cursor-pointer flex-col items-center rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors",
-          drag ? "border-accent bg-accent-soft" : "border-line-strong hover:bg-bg-subtle",
+          drag ? "border-amber-400/60 bg-amber-400/10" : "border-white/15 hover:bg-white/[0.05]",
         )}
       >
-        <FileUp className="size-7 text-accent" aria-hidden />
+        <FileUp className="size-7 text-amber-300" aria-hidden />
         <p className="mt-2 font-medium">Drop statements here, or tap to choose</p>
         <p className="mt-1 text-xs text-fg-muted">PDF, CSV or Excel · up to 10 files · 10 MB each</p>
         <input ref={input} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => (add(e.target.files), (e.target.value = ""))} />
@@ -96,7 +96,7 @@ export function UploadZone({ onUploaded }: { onUploaded: (docs: Document[]) => v
                   {fmtBytes(f.size)}
                   <button
                     aria-label={`Remove ${f.name}`}
-                    className="rounded-full p-1 hover:bg-white"
+                    className="rounded-full p-1 hover:bg-white/10 hover:text-zinc-100"
                     onClick={() => setFiles((x) => x.filter((y) => y !== f))}
                   >
                     <X className="size-3.5" />
@@ -123,7 +123,7 @@ export function UploadZone({ onUploaded }: { onUploaded: (docs: Document[]) => v
           </div>
           {password ? (
             <label className="flex items-center gap-2 text-sm text-fg-muted">
-              <input type="checkbox" className="size-4 accent-accent" checked={savePassword} onChange={(e) => setSavePassword(e.target.checked)} />
+              <input type="checkbox" className="size-4 accent-amber-400" checked={savePassword} onChange={(e) => setSavePassword(e.target.checked)} />
               Save this password (encrypted) for future statements
             </label>
           ) : null}

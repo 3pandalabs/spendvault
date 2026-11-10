@@ -35,7 +35,7 @@ export default function LoginPage() {
 
   return (
     <>
-      <h1 className="text-lg font-semibold">Sign in</h1>
+      <h1 className="text-xl font-semibold">Sign in</h1>
       <p className="mb-5 text-sm text-fg-muted">Welcome back to SpendVault.</p>
       <form onSubmit={onSubmit} className="space-y-4">
         <Field label="Email" htmlFor="email">
@@ -66,7 +66,7 @@ export default function LoginPage() {
       </form>
       <p className="mt-4 text-center text-sm text-fg-muted">
         New here?{" "}
-        <Link href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"} className="font-medium text-accent hover:underline">
+        <Link href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"} className="font-medium text-accent-strong hover:underline">
           Create an account
         </Link>
       </p>

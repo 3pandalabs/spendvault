@@ -2,16 +2,18 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
+// AdVault's button (rounded-lg, amber primary, glass outline). `dark` is kept
+// for API compatibility and renders as AdVault's raised neutral.
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-accent text-accent-fg hover:opacity-90 focus-visible:ring-accent",
-        dark: "bg-zinc-900 text-white hover:bg-zinc-700",
-        outline: "border border-line-strong bg-white text-fg hover:bg-bg-subtle",
-        ghost: "text-fg-muted hover:bg-bg-subtle hover:text-fg",
-        destructive: "bg-red-600 text-white hover:bg-red-700",
+        default: "bg-amber-400 text-zinc-950 hover:bg-amber-300 focus-visible:ring-amber-400",
+        dark: "bg-white/10 text-zinc-100 hover:bg-white/15 focus-visible:ring-white/40",
+        outline: "border border-white/15 bg-white/5 text-zinc-100 hover:bg-white/10 focus-visible:ring-white/40",
+        ghost: "text-zinc-300 hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-white/40",
+        destructive: "bg-red-600 text-white hover:bg-red-500 focus-visible:ring-red-500",
       },
       size: {
         default: "h-10 px-4 py-2",

@@ -41,7 +41,7 @@ export default function SignupPage() {
 
   return (
     <>
-      <h1 className="text-lg font-semibold">Create your account</h1>
+      <h1 className="text-xl font-semibold">Create your account</h1>
       <p className="mb-5 text-sm text-fg-muted">Next, you&apos;ll get a private address to forward statements to.</p>
       <form onSubmit={onSubmit} className="space-y-4">
         <Field label="Your name" htmlFor="name">
@@ -71,11 +71,11 @@ export default function SignupPage() {
           />
           <span>
             I am 18 or older, and I agree to the{" "}
-            <Link href="/terms" target="_blank" className="font-medium text-accent hover:underline">
+            <Link href="/terms" target="_blank" className="font-medium text-accent-strong hover:underline">
               Terms
             </Link>{" "}
             and{" "}
-            <Link href="/privacy" target="_blank" className="font-medium text-accent hover:underline">
+            <Link href="/privacy" target="_blank" className="font-medium text-accent-strong hover:underline">
               Privacy Policy
             </Link>
             , including SpendVault reading the statements I send it.
@@ -88,7 +88,7 @@ export default function SignupPage() {
       </form>
       <p className="mt-4 text-center text-sm text-fg-muted">
         Already have an account?{" "}
-        <Link href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"} className="font-medium text-accent hover:underline">
+        <Link href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"} className="font-medium text-accent-strong hover:underline">
           Sign in
         </Link>
       </p>

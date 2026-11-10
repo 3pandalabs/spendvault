@@ -69,7 +69,7 @@ export default function SharePage() {
     return (
       <>
         <PageHeader title="Sent to SpendVault" />
-        <div className="rounded-2xl border border-line bg-white p-6 text-center">
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-6 text-center">
           <CheckCircle2 className="mx-auto size-10 text-down" />
           <p className="mt-2 font-medium">
             Got {done.length} file{done.length === 1 ? "" : "s"}. We&apos;re reading {done.length === 1 ? "it" : "them"} now.
@@ -92,7 +92,7 @@ export default function SharePage() {
     <>
       <PageHeader title="Shared file" subtitle="Files you shared to SpendVault from another app." />
       {errorKey && SHARE_ERRORS[errorKey] && !files?.length ? (
-        <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900" role="alert">
+        <p className="mb-4 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-200" role="alert">
           {SHARE_ERRORS[errorKey]}
         </p>
       ) : null}
@@ -110,7 +110,7 @@ export default function SharePage() {
           }
         />
       ) : (
-        <div className="space-y-4 rounded-2xl border border-line bg-white p-4">
+        <div className="space-y-4 rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-4">
           <ul className="space-y-1">
             {files.map((f, i) => (
               <li key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-lg bg-bg-subtle px-3 py-2 text-sm">
