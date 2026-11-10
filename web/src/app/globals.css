@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/* Light-only, like the other org consoles: dense tables and charts read worse
+   half-themed than not themed. Accent is SpendVault indigo. */
+:root {
+  color-scheme: light;
+  --bg: #f7f7fb;
+  --bg-subtle: #f1f2f7;
+  --fg: #17172b;
+  --fg-muted: #555469;
+  --border: #e6e6ef;
+  --border-strong: #cfd0dc;
+  --accent: #4338ca;
+  --accent-soft: #eef0ff;
+  --accent-fg: #ffffff;
+  --up: #b42318;
+  --down: #067647;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--accent-fg);
+  --color-up: var(--up);
+  --color-down: var(--down);
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Room for the fixed mobile tab bar plus the iOS home indicator. */
+.pb-tabbar {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
