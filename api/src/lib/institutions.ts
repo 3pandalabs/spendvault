@@ -54,10 +54,20 @@ export function institutionFromSender(from: string | null | undefined): Institut
   return INSTITUTIONS.find((i) => i.senders.some((s) => domain === s || domain.endsWith(`.${s}`)));
 }
 
-/** Match free text (subject, filename, first page of the PDF). Longest-name-first to prefer "SBI Card" over "SBI". */
+/**
+ * Match free text (subject, filename, first page of the PDF). The EARLIEST
+ * mention wins: the issuer's name heads its own statement, while other banks
+ * show up later in transaction lines ("NEFT from HDFC"). Ties go to list
+ * order, which puts "SBI Card" before "SBI".
+ */
 export function institutionFromText(text: string | null | undefined): Institution | undefined {
   if (!text) return undefined;
-  return INSTITUTIONS.find((i) => i.names.test(text));
+  let best: { inst: Institution; at: number } | undefined;
+  for (const inst of INSTITUTIONS) {
+    const m = inst.names.exec(text);
+    if (m && (!best || m.index < best.at)) best = { inst, at: m.index };
+  }
+  return best?.inst;
 }
 
 /** Gmail search that catches statements and alert mails from every known sender. */
