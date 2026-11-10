@@ -1,5 +1,5 @@
-// spendvault-inbound: receives every mail sent to *@in.spendvault.3pandalabs.com
-// (Cloudflare Email Routing catch-all → this Worker) and hands the raw message
+// spendvault-inbound: receives every mail sent to vault+<token>@in.spendvault.3pandalabs.com
+// (one Email Routing rule for vault@ with subaddressing on → this Worker) and hands the raw message
 // to the API, which finds the user by the local part and parses it.
 //
 // Dumb transport on purpose: no parsing here, nothing stored here. The API

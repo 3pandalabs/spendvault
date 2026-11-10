@@ -19,7 +19,8 @@ const schema = z.object({
   WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
   CORS_ORIGINS: optional,
 
-  // Forwarding addresses are `<inbound_token>@<INBOUND_DOMAIN>`.
+  // Forwarding addresses are `<INBOUND_MAILBOX>+<inbound_token>@<INBOUND_DOMAIN>` (lib/inbound.ts).
+  INBOUND_MAILBOX: z.string().default("vault"),
   INBOUND_DOMAIN: z.string().default("in.spendvault.3pandalabs.com"),
 
   // Shared with the web Worker and the inbound-email Worker (X-Internal-Secret).

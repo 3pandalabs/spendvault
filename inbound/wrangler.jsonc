@@ -1,6 +1,6 @@
 // spendvault-inbound: Cloudflare Email Routing → this Worker → API.
-// Email Routing for the subdomain `in.spendvault.3pandalabs.com` has a
-// catch-all rule "Send to a Worker: spendvault-inbound" (set up in the
+// Email Routing for the subdomain `in.spendvault.3pandalabs.com` (subaddressing on) has a
+// rule vault@in.spendvault.3pandalabs.com → "Send to a Worker: spendvault-inbound" (set up in the
 // dashboard; see infra/README.md). No routes / custom domain: email only.
 {
   "$schema": "node_modules/wrangler/config-schema.json",

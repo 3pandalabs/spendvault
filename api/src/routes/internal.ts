@@ -1,3 +1,4 @@
+import { tokenFromLocalPart } from "../lib/inbound.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { and, isNull, sql } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -8,7 +9,7 @@ import { enqueueSafely } from "../lib/ingest/queue.js";
 import { ingestEmail } from "../lib/ingest/store.js";
 
 // POST /internal/inbound-email (api/ROUTES.md "Internal"): the Email Routing
-// Worker POSTs each raw message addressed to <token>@INBOUND_DOMAIN. Always
+// Worker POSTs each raw message addressed to <mailbox>+<token>@INBOUND_DOMAIN. Always
 // 200 once authenticated (the Worker must never bounce-loop).
 
 const MAX_EMAIL_BYTES = 25 * 1024 * 1024;
@@ -22,8 +23,8 @@ function secretOk(req: FastifyRequest): boolean {
   return timingSafeEqual(a, b);
 }
 
-/** Local part of the recipient: X-Envelope-To first, then the To header of the message. */
-export function recipientToken(envelopeTo: string | undefined, raw: Buffer): string | null {
+/** User token from the recipient (plus tag of the local part): X-Envelope-To first, then the To header. */
+function recipientLocalPart(envelopeTo: string | undefined, raw: Buffer): string | null {
   const pick = (addr: string | undefined) => addr?.trim().match(/<?([^<>\s@]+)@[^<>\s@]+>?/)?.[1]?.toLowerCase() ?? null;
   const fromEnvelope = pick(envelopeTo?.split(",")[0]);
   if (fromEnvelope) return fromEnvelope;
@@ -64,4 +65,8 @@ export async function internalRoutes(app: FastifyInstance) {
     req.log.info({ userId: user.id, accepted, docs: result.docs.length, ignored: result.ignored }, "inbound email");
     return { accepted, ignored: result.ignored ?? (result.docs.length && !accepted ? "duplicate" : null) };
   });
+}
+
+export function recipientToken(envelopeTo: string | undefined, raw: Buffer): string | null {
+  return tokenFromLocalPart(recipientLocalPart(envelopeTo, raw));
 }
