@@ -1,0 +1,6 @@
+# Cloudflare Workers static-assets headers (next.config headers() don't apply
+# to files the ASSETS binding serves directly). The service worker must never
+# be cached, or a fix to the share-target handler would take a day to land.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Service-Worker-Allowed: /
