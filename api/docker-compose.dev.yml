@@ -1,0 +1,22 @@
+# Local Postgres only (port 5436, so it doesn't clash with RentVault/RsvpVault
+# dev databases). Production uses the shared 3pandalabs-postgres instance.
+# Temporal for dev: `temporal server start-dev` (CLI), see README.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: spendvault
+      POSTGRES_PASSWORD: spendvault
+      POSTGRES_DB: spendvault
+    ports:
+      - "5436:5432"
+    volumes:
+      - spendvault_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spendvault"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  spendvault_pgdata:
