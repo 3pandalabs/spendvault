@@ -24,7 +24,7 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
 - `GET /me` → `Me`
   ```
   Me = User & {
-    forwardingAddress: string,            // <inbound_token>@INBOUND_DOMAIN
+    forwardingAddress: string,            // vault+<inbound_token>@INBOUND_DOMAIN (plus tag = user)
     whatsapp: { available: boolean, linkedPhone: string|null, number: string|null },
     setup: { hasDocuments: boolean, hasPasswords: boolean, forwardingConfirmed: boolean },
     llmEnabled: boolean

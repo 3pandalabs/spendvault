@@ -1,3 +1,4 @@
+import { forwardingAddressFor } from "../lib/inbound.js";
 import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -19,7 +20,7 @@ const exportLimiter = keyedLimiter(10, 60 * MINUTE);
 
 type UserRow = typeof users.$inferSelect;
 
-const forwardingAddress = (u: UserRow) => `${u.inboundToken}@${env.INBOUND_DOMAIN}`;
+const forwardingAddress = (u: UserRow) => forwardingAddressFor(u.inboundToken, env.INBOUND_MAILBOX, env.INBOUND_DOMAIN);
 
 async function meView(u: UserRow) {
   const exists = (q: SQL) => db.execute<{ e: boolean }>(q).then((r) => Boolean(r.rows[0]?.e));
