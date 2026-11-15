@@ -1,9 +1,10 @@
 import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NativeConnection, Worker } from "@temporalio/worker";
-import { and, eq, lt, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { documents } from "../db/schema.js";
+import { env } from "../env.js";
 import { enqueueSafely } from "../lib/ingest/queue.js";
 import { startInsightsSweep } from "../lib/insights/sweep.js";
 import * as activities from "./activities/index.js";
@@ -22,6 +23,34 @@ const workflowsPath = fileURLToPath(new URL(`./workflows/index${extname(import.m
 // idempotent, so re-enqueueing is always safe.
 const STUCK_SWEEP_MS = 10 * 60_000;
 
+// Receipts parked as pending_extraction (no ANTHROPIC_API_KEY, or the AI call
+// failed) are retried hourly once a key is configured.
+async function sweepPendingReceipts(): Promise<number> {
+  if (!env.ANTHROPIC_API_KEY) return 0;
+  const rows = await db
+    .update(documents)
+    .set({ status: "received", error: null })
+    .where(
+      inArray(
+        documents.id,
+        db
+          .select({ id: documents.id })
+          .from(documents)
+          .where(
+            and(
+              eq(documents.status, "pending_extraction"),
+              isNotNull(documents.contentEnc),
+              or(isNull(documents.processedAt), lt(documents.processedAt, sql`now() - interval '1 hour'`)),
+            ),
+          )
+          .limit(25),
+      ),
+    )
+    .returning({ id: documents.id });
+  for (const d of rows) await enqueueSafely(d.id);
+  return rows.length;
+}
+
 async function sweepStuckDocuments(): Promise<number> {
   const stuck = await db
     .select({ id: documents.id })
@@ -34,7 +63,7 @@ async function sweepStuckDocuments(): Promise<number> {
     )
     .limit(200);
   for (const d of stuck) await enqueueSafely(d.id);
-  return stuck.length;
+  return stuck.length + (await sweepPendingReceipts());
 }
 
 function startStuckSweep(): void {

@@ -26,6 +26,7 @@ type CountsRow = {
   alerts_last_7d: number;
   whatsapp_linked_users: number;
   active_sessions: number;
+  receipts: number;
 };
 
 type DatabaseRow = { size_bytes: string; size_pretty: string; connections: number };
@@ -47,7 +48,8 @@ export async function metricsRoutes(app: FastifyInstance) {
         (select count(*) from transactions where superseded_by is null)::int as transactions,
         (select count(*) from alerts where created_at > now() - interval '7 days')::int as alerts_last_7d,
         (select count(*) from users where whatsapp_phone is not null)::int as whatsapp_linked_users,
-        (select count(*) from sessions where expires_at > now())::int as active_sessions
+        (select count(*) from sessions where expires_at > now())::int as active_sessions,
+        (select count(*) from receipts)::int as receipts
     `);
     const database = await db.execute<DatabaseRow>(sql`
       select
@@ -73,6 +75,7 @@ export async function metricsRoutes(app: FastifyInstance) {
         alertsLast7d: c.alerts_last_7d,
         whatsappLinkedUsers: c.whatsapp_linked_users,
         activeSessions: c.active_sessions,
+        receipts: c.receipts,
       },
       traffic: { apiRequestsLastHour: requestsLastHour() },
       process: { rssBytes: mem.rss, heapUsedBytes: mem.heapUsed, cpuPercentOfOneCore: cpuPercentOfOneCore() },

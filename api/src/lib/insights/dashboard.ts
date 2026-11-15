@@ -15,6 +15,7 @@ import {
   spendEntries,
   sumBy,
   usable,
+  type SpendEntry,
   type Txn,
 } from "./util.js";
 
@@ -48,6 +49,8 @@ export function computeDashboard(opts: {
   today: string;
   availableMonths?: string[];
   accounts?: readonly AccountInfo[];
+  /** Receipt item splits by transaction id (receipts/split.ts): category views only. */
+  splits?: ReadonlyMap<string, ReadonlyArray<{ category: string; amount: number }>>;
 }): DashboardData {
   const txns = usable(opts.txns, opts.currency);
   const availableMonths = opts.availableMonths ?? [...new Set(txns.map((t) => monthOf(t.postedOn)))].sort().reverse();
@@ -59,8 +62,14 @@ export function computeDashboard(opts: {
   const avgMonths = [1, 2, 3].map((n) => addMonths(month, -n)).filter((m) => dataMonths.has(m));
 
   const inMonth = entries.filter((e) => monthOf(e.date) === month);
-  const catMonth = sumBy(entries, (e) => `${e.category}|${monthOf(e.date)}`);
-  const catNow = sumBy(inMonth, (e) => e.category);
+  // Category views use receipt line items where a matched receipt splits a
+  // transaction; merchant/account/daily views keep whole transactions.
+  const catEntries = opts.splits?.size ? applySplits(entries, opts.splits) : entries;
+  const catMonth = sumBy(catEntries, (e) => `${e.category}|${monthOf(e.date)}`);
+  const catNow = sumBy(
+    catEntries.filter((e) => monthOf(e.date) === month),
+    (e) => e.category,
+  );
   const spend = [...catNow.values()].reduce((s, v) => s + Math.max(0, v), 0);
 
   const avgOf = (get: (m: string) => number) =>
@@ -144,4 +153,11 @@ function monthSpend(catMonth: Map<string, number>, month: string): number {
   let s = 0;
   for (const [k, v] of catMonth) if (k.endsWith(`|${month}`)) s += Math.max(0, v);
   return round2(s);
+}
+
+function applySplits(entries: SpendEntry[], splits: ReadonlyMap<string, ReadonlyArray<{ category: string; amount: number }>>): SpendEntry[] {
+  return entries.flatMap((e) => {
+    const parts = e.amount > 0 ? splits.get(e.txn.id) : undefined;
+    return parts?.length ? parts.map((p) => ({ ...e, category: p.category, amount: p.amount })) : [e];
+  });
 }

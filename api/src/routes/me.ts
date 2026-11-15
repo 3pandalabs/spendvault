@@ -6,12 +6,13 @@ import { z } from "zod";
 import { markUserDeleted, requireAuth } from "../auth/plugin.js";
 import { verifySecret } from "../auth/password.js";
 import { db } from "../db/index.js";
-import { accounts, alerts, forwardingConfirmations, transactions, users } from "../db/schema.js";
+import { accounts, alerts, documents, forwardingConfirmations, receiptItems, receipts, transactions, users } from "../db/schema.js";
 import { env } from "../env.js";
 import { keyedLimiter } from "../lib/clientKey.js";
 import { gmailFilterQuery } from "../lib/institutions.js";
 import { userView } from "../lib/users.js";
 import { alertView } from "../lib/insights/load.js";
+import { receiptDocColumns, receiptItemView, receiptView } from "../lib/receipts/db.js";
 import { accountView, transactionView } from "./transactions.js";
 
 const MINUTE = 60_000;
@@ -119,7 +120,7 @@ export async function meRoutes(fastify: FastifyInstance) {
   app.get("/me/export", { preHandler: requireAuth }, async (req, reply) => {
     if (!exportLimiter(req.userId!)) return reply.code(429).send({ error: "rate_limited" });
     const userId = req.userId!;
-    const [txns, accts, counts, alertRows] = await Promise.all([
+    const [txns, accts, counts, alertRows, receiptRows, itemRows] = await Promise.all([
       db
         .select()
         .from(transactions)
@@ -130,13 +131,27 @@ export async function meRoutes(fastify: FastifyInstance) {
         SELECT account_id, count(*)::int AS n, max(posted_on)::text AS last FROM transactions
         WHERE user_id = ${userId} AND superseded_by IS NULL AND account_id IS NOT NULL GROUP BY account_id`),
       db.select().from(alerts).where(eq(alerts.userId, userId)).orderBy(desc(alerts.createdAt)),
+      db
+        .select({ r: receipts, ...receiptDocColumns })
+        .from(receipts)
+        .innerJoin(documents, eq(documents.id, receipts.documentId))
+        .where(eq(receipts.userId, userId))
+        .orderBy(desc(receipts.createdAt)),
+      db.select().from(receiptItems).where(eq(receiptItems.userId, userId)).orderBy(receiptItems.receiptId, receiptItems.position),
     ]);
+    const itemsBy = new Map<string, (typeof itemRows)[number][]>();
+    for (const i of itemRows) itemsBy.set(i.receiptId, [...(itemsBy.get(i.receiptId) ?? []), i]);
+    const receiptByTxn = new Map(receiptRows.filter((x) => x.r.transactionId).map((x) => [x.r.transactionId!, x.r.id]));
     const byAcct = new Map(counts.rows.map((r) => [r.account_id, r]));
     reply.header("content-disposition", `attachment; filename="spendvault-export-${new Date().toISOString().slice(0, 10)}.json"`);
     return {
-      transactions: txns.map(transactionView),
+      transactions: txns.map((t) => transactionView(t, receiptByTxn.get(t.id) ?? null)),
       accounts: accts.map((a) => accountView(a, byAcct.get(a.id)?.n ?? 0, byAcct.get(a.id)?.last ?? null)),
       alerts: alertRows.map(alertView),
+      receipts: receiptRows.map(({ r, ...d }) => {
+        const items = itemsBy.get(r.id) ?? [];
+        return { ...receiptView(r, d, items.length), items: items.map(receiptItemView) };
+      }),
     };
   });
 

@@ -17,8 +17,8 @@ type AccountRow = typeof accounts.$inferSelect;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** The `Transaction` shape from ROUTES.md. */
-export function transactionView(t: TxnRow) {
+/** The `Transaction` shape from ROUTES.md. `receiptId` = the linked receipt, if any. */
+export function transactionView(t: TxnRow, receiptId: string | null = null) {
   return {
     id: t.id,
     accountId: t.accountId,
@@ -32,6 +32,7 @@ export function transactionView(t: TxnRow) {
     currency: t.currency,
     sourceKind: t.sourceKind,
     categoryLocked: t.categoryLocked,
+    receiptId,
   };
 }
 
@@ -147,7 +148,7 @@ export async function transactionRoutes(fastify: FastifyInstance) {
       if (qs.cursor && !cursor) return reply.code(400).send({ error: "invalid_cursor", code: "VALIDATION" });
       const like = qs.q ? `%${escapeLike(qs.q)}%` : null;
       const rows = await db
-        .select()
+        .select({ t: transactions, receiptId: sql<string | null>`(SELECT r.id FROM receipts r WHERE r.transaction_id = ${transactions.id})` })
         .from(transactions)
         .where(
           and(
@@ -166,8 +167,8 @@ export async function transactionRoutes(fastify: FastifyInstance) {
         .limit(qs.limit + 1);
       const page = rows.slice(0, qs.limit);
       return {
-        items: page.map(transactionView),
-        nextCursor: rows.length > qs.limit ? encodeCursor(page[page.length - 1]) : null,
+        items: page.map((r) => transactionView(r.t, r.receiptId)),
+        nextCursor: rows.length > qs.limit ? encodeCursor(page[page.length - 1].t) : null,
       };
     },
   );
