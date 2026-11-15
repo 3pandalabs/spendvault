@@ -1,6 +1,6 @@
 "use client";
 
-import { ListOrdered, Lock, Search, X } from "lucide-react";
+import { ListOrdered, Lock, Receipt, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -215,7 +215,7 @@ function Transactions() {
                       setEdited({});
                       setMore(null);
                       first.reload();
-                    } else setEdited((e) => ({ ...e, [u.id]: u }));
+                    } else setEdited((e) => ({ ...e, [u.id]: { ...u, receiptId: t.receiptId } }));
                   }}
                 />
               ))}
@@ -306,8 +306,15 @@ function TxnRow({
       <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 md:grid-cols-[7rem_minmax(0,1fr)_14rem_8rem] md:items-center">
         <span className="order-3 text-xs text-fg-muted md:order-none md:text-sm md:text-fg">{fmtDate(t.postedOn)}</span>
         <div className="order-1 min-w-0 md:order-none">
-          <p className="truncate text-sm font-medium" title={t.descriptionRaw}>
-            {t.merchant}
+          <p className="flex min-w-0 items-center gap-1.5 text-sm font-medium" title={t.descriptionRaw}>
+            <Link href={`/transactions/detail?id=${t.id}`} className="truncate hover:underline">
+              {t.merchant}
+            </Link>
+            {t.receiptId ? (
+              <span title="Has a receipt">
+                <Receipt className="size-3.5 shrink-0 text-amber-300" aria-label="Has a receipt" />
+              </span>
+            ) : null}
           </p>
           <p className="truncate text-xs text-fg-muted" title={t.descriptionRaw}>
             {account ? `${accountName(account)} · ` : ""}

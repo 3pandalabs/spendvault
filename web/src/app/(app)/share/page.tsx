@@ -16,7 +16,7 @@ const noop = () => () => undefined;
 
 const SHARE_ERRORS: Record<string, string> = {
   nosw: "SpendVault was still starting up and couldn't catch that file. Share it again; it works from the second time on.",
-  empty: "Nothing came through with that share. Share the PDF or spreadsheet file itself, not a link to it.",
+  empty: "Nothing came through with that share. Share the PDF, spreadsheet or photo itself, not a link to it.",
   read: "We couldn't read the shared file. Try sharing it again, or upload it from Documents.",
 };
 
@@ -74,9 +74,9 @@ export default function SharePage() {
           <p className="mt-2 font-medium">
             Got {done.length} file{done.length === 1 ? "" : "s"}. We&apos;re reading {done.length === 1 ? "it" : "them"} now.
           </p>
-          <p className="mt-1 text-sm text-fg-muted">This usually takes under a minute.</p>
+          <p className="mt-1 text-sm text-fg-muted">This usually takes under a minute. Photos are saved as receipts.</p>
           <div className="mt-4 flex justify-center gap-2">
-            <Link href="/documents">
+            <Link href={done.some((d) => d.kind === "receipt") ? "/receipts" : "/documents"}>
               <Button>See progress</Button>
             </Link>
             <Link href="/dashboard">
@@ -102,7 +102,7 @@ export default function SharePage() {
         <EmptyState
           icon={<Share2 />}
           title="Nothing waiting"
-          body="On Android, tap Share on a statement in your banking app, email or Files, and pick SpendVault."
+          body="On Android, tap Share on a statement or a receipt photo in your banking app, email, Gallery or Files, and pick SpendVault."
           action={
             <Link href="/documents">
               <Button variant="outline">Upload instead</Button>

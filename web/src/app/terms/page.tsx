@@ -35,8 +35,9 @@ export default function TermsPage() {
     >
       <Section id="service" title="1. The service">
         <p>
-          SpendVault reads bank and credit-card statements and transaction alerts that you send it (by email forwarding, upload, your
-          phone&apos;s share sheet or WhatsApp), extracts the transactions, and shows you a dashboard, spending alerts and savings suggestions.
+          SpendVault reads bank and credit-card statements, transaction alerts and receipts that you send it (by email forwarding, upload,
+          camera, your phone&apos;s share sheet or WhatsApp), extracts the transactions and receipt details, matches receipts to transactions,
+          and shows you a dashboard, spending alerts and savings suggestions.
           It doesn&apos;t connect to your bank, can&apos;t see your balance in real time and can&apos;t move money.
         </p>
       </Section>
