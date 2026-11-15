@@ -6,7 +6,7 @@ import { Footer } from "@/components/Footer";
 import { Logo } from "@/components/Wordmark";
 
 export const CONTACT_EMAIL = "hello@3pandalabs.com";
-export const LAST_UPDATED = "9 November 2026";
+export const LAST_UPDATED = "15 November 2026";
 
 export type TocEntry = { id: string; title: string };
 

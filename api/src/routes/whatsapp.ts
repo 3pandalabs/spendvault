@@ -75,11 +75,11 @@ async function handleMessage(msg: InboundMessage, log: FastifyBaseLogger): Promi
   }
   const type = fileTypeOf(msg.mimeType ?? media.mimeType, msg.filename, media.content.subarray(0, 8));
   if (!type || type === "eml" || type === "text") return reply("Please send a statement as a PDF, CSV or XLSX file.");
-  if (type === "image" && !env.ANTHROPIC_API_KEY) return reply("Photos aren't supported yet — please send the statement PDF.");
+  // Photos are receipts (a statement photo is rerouted when AI reading is on).
   const { doc, created } = await storeDocument({
     userId: user.id,
     source: "whatsapp",
-    kind: "statement",
+    kind: type === "image" ? "receipt" : "statement",
     content: media.content,
     mimeType: mimeFor(type, msg.mimeType ?? media.mimeType),
     filename: msg.filename,

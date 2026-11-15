@@ -9,7 +9,7 @@ export function documentView(d: DocRow) {
   return {
     id: d.id,
     source: d.source,
-    kind: d.kind as "statement" | "alert" | "unknown",
+    kind: d.kind as "statement" | "alert" | "receipt" | "unknown",
     status: d.status,
     filename: d.filename,
     mimeType: d.mimeType,

@@ -12,6 +12,7 @@ import { documentRoutes } from "./routes/documents.js";
 import { internalRoutes } from "./routes/internal.js";
 import { meRoutes } from "./routes/me.js";
 import { metricsRoutes } from "./routes/metrics.js";
+import { receiptRoutes } from "./routes/receipts.js";
 import { transactionRoutes } from "./routes/transactions.js";
 import { whatsappRoutes } from "./routes/whatsapp.js";
 
@@ -58,6 +59,7 @@ await app.register(authRoutes);
 await app.register(meRoutes);
 await app.register(documentRoutes);
 await app.register(transactionRoutes);
+await app.register(receiptRoutes);
 await app.register(dashboardRoutes);
 await app.register(whatsappRoutes);
 await app.register(internalRoutes);

@@ -12,9 +12,10 @@ Expense insights from emailed bank/credit-card statements (3PandaLabs app #7). O
 - One lowercase identifier: `spendvault` (repo, DB, role, Coolify, hosts, `/metrics` app key). One first label for all hostnames.
 - Branch → PR → merge as `3pandalabs-admin`. Never commit to main, never `git add -A`.
 - Financial data: never log amounts, merchants, statement text, PDF passwords or email content — ids and counts only. Every query scoped by user id; other users' rows → 404.
-- Data at rest: PDF passwords and raw documents are AES-256-GCM encrypted with `DATA_KEY` (`api/src/lib/crypto.ts`). Originals are deleted after a successful parse unless the user turned that off.
+- Data at rest: PDF passwords and raw documents (receipt images included) are AES-256-GCM encrypted with `DATA_KEY` (`api/src/lib/crypto.ts`). Originals are deleted after a successful parse unless the user turned that off. Any change to what's stored updates the privacy page in the same PR.
+- Receipts: a `documents` row with `kind = receipt` + `receipts`/`receipt_items`. No `ANTHROPIC_API_KEY` → stored as `pending_extraction`, never guessed. Matching rules live in `lib/receipts/match.ts` (see ROUTES.md "Receipts").
 - Migrations are hand-written and idempotent (they run on container start). Never set `MIGRATION_DATABASE_URL`.
-- Pure modules (`lib/categories`, `lib/institutions`, `lib/ingest/*` parsers, `lib/insights/*` analytics, except the DB-side `insights/load.ts` + `insights/sweep.ts`) must not import env/db, so vitest runs with no infrastructure.
+- Pure modules (`lib/categories`, `lib/institutions`, `lib/ingest/*` parsers, `lib/insights/*` analytics, except the DB-side `insights/load.ts` + `insights/sweep.ts`; `lib/receipts/*` except `receipts/db.ts` + `receipts/process.ts`) must not import env/db, so vitest runs with no infrastructure.
 - Spend totals exclude `superseded_by IS NOT NULL` (alert rows later matched by a statement line) and `NON_SPEND` categories (card bill payments, income, transfers, investments).
 - `/metrics` follows the org envelope; keep `metrics/collector.ts` byte-identical across apps. Update the admin flow diagram when routes/auth change.
 

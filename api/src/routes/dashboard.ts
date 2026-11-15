@@ -10,6 +10,7 @@ import { notFound } from "../lib/errors.js";
 import { computeDashboard } from "../lib/insights/dashboard.js";
 import { alertView, loadAccountLabels, loadAvailableMonths, loadTxns } from "../lib/insights/load.js";
 import { computeSavings } from "../lib/insights/savings.js";
+import { loadReceiptSplits } from "../lib/receipts/db.js";
 import { recomputeAlertsForUser } from "../lib/insights/sweep.js";
 import { addDays, addMonths, monthEnd, monthOf, monthStart, todayInKolkata } from "../lib/insights/util.js";
 
@@ -40,7 +41,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       const today = todayInKolkata();
       const availableMonths = await loadAvailableMonths(userId, currency);
       const month = req.query.month ?? availableMonths[0] ?? monthOf(today);
-      const [txns, accounts, recent] = await Promise.all([
+      const [txns, accounts, recent, splits] = await Promise.all([
         loadTxns(userId, currency, monthStart(addMonths(month, -11)), monthEnd(month)),
         loadAccountLabels(userId),
         db
@@ -49,8 +50,9 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
           .where(and(eq(alerts.userId, userId), isNull(alerts.dismissedAt)))
           .orderBy(desc(alerts.createdAt))
           .limit(5),
+        loadReceiptSplits(userId, monthStart(addMonths(month, -11)), monthEnd(month)),
       ]);
-      const data = computeDashboard({ txns, currency, month, today, availableMonths, accounts });
+      const data = computeDashboard({ txns, currency, month, today, availableMonths, accounts, splits });
       return { ...data, recentAlerts: recent.map(alertView) };
     },
   );

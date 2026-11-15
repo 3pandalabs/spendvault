@@ -132,8 +132,11 @@ export async function documentRoutes(fastify: FastifyInstance) {
       const password = fields.password?.length ? fields.password.slice(0, 200) : undefined;
       const savePassword = fields.savePassword === "true" || fields.savePassword === "1";
 
+      // kind=receipt: the user said these are receipts (the "Add receipt" button).
+      const asReceipt = fields.kind === "receipt";
+
       const typed = files.map((f) => ({ ...f, type: fileTypeOf(f.mimetype, f.filename, f.content.subarray(0, 8)) }));
-      const bad = typed.find((f) => !f.type || f.type === "image" || f.content.length === 0);
+      const bad = typed.find((f) => !f.type || f.content.length === 0 || (asReceipt && !["image", "pdf", "text"].includes(f.type)));
       if (bad) return reply.code(400).send({ error: "unsupported_file_type", code: "VALIDATION" });
 
       const results: Array<{ doc: DocRow; created: boolean }> = [];
@@ -148,7 +151,8 @@ export async function documentRoutes(fastify: FastifyInstance) {
           await storeDocument({
             userId,
             source,
-            kind: f.type === "text" ? "unknown" : "statement",
+            // Photos are receipts; a PDF that turns out to be an invoice is rerouted at processing.
+            kind: asReceipt || f.type === "image" ? "receipt" : f.type === "text" ? "unknown" : "statement",
             content: f.content,
             mimeType: mimeFor(f.type!, f.mimetype),
             filename: f.filename,
