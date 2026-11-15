@@ -22,6 +22,7 @@ const STATUS: Record<DocumentStatus, [string, BadgeVariant]> = {
   needs_password: ["Needs password", "warn"],
   failed: ["Couldn't read", "bad"],
   ignored: ["Skipped", "muted"],
+  pending_extraction: ["Needs total", "warn"],
 };
 
 const busyStatus = (s: DocumentStatus) => s === "received" || s === "processing";
@@ -186,7 +187,7 @@ function DocRow({ d, onChange }: { d: Document; onChange: (d: Document | null) =
           <p className="mt-0.5 text-xs text-fg-muted">
             {[
               d.institutionName,
-              d.kind === "alert" ? "Transaction alert" : d.kind === "statement" ? "Statement" : null,
+              d.kind === "alert" ? "Transaction alert" : d.kind === "statement" ? "Statement" : d.kind === "receipt" ? "Receipt" : null,
               period,
               d.source === "email" && d.emailFrom ? `from ${d.emailFrom}` : null,
               fmtBytes(d.sizeBytes),
@@ -195,7 +196,13 @@ function DocRow({ d, onChange }: { d: Document; onChange: (d: Document | null) =
               .filter(Boolean)
               .join(" · ")}
           </p>
-          {d.status === "parsed" ? (
+          {d.kind === "receipt" ? (
+            <p className="mt-1 text-sm">
+              <Link href="/receipts" className="text-accent-strong hover:underline">
+                {d.status === "pending_extraction" ? "Saved. Enter the total in Receipts" : "Open in Receipts"}
+              </Link>
+            </p>
+          ) : d.status === "parsed" ? (
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
               <span>
                 {d.txnCount} transaction{d.txnCount === 1 ? "" : "s"}

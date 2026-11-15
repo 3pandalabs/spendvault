@@ -3,7 +3,7 @@ import { A, H3, LegalPage, Mail, Section, UL } from "@/components/legal";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
-  description: "What SpendVault collects from your bank and card statements, how it's protected, who processes it, and how to export or delete it.",
+  description: "What SpendVault collects from your bank and card statements and receipts, how it's protected, who processes it, and how to export or delete it.",
   alternates: { canonical: "/privacy" },
 };
 
@@ -30,7 +30,8 @@ export default function PrivacyPage() {
         <>
           <p>
             SpendVault is a service of 3PandaLabs LLC, a New Jersey limited liability company (&ldquo;3PandaLabs&rdquo;, &ldquo;we&rdquo;,
-            &ldquo;us&rdquo;). It reads the bank and credit-card statements you choose to send it and turns them into a spending dashboard.
+            &ldquo;us&rdquo;). It reads the bank and credit-card statements and the receipts you choose to send it and turns them into a spending
+            dashboard.
             Because that is financial data, this policy is specific about exactly what we touch.
           </p>
         </>
@@ -38,9 +39,12 @@ export default function PrivacyPage() {
     >
       <Section id="summary" title="1. The short version">
         <UL>
-          <li>We only see what you send us: emails your Gmail filter forwards, files you upload or share, and files you send on WhatsApp.</li>
+          <li>
+            We only see what you send us: emails your Gmail filter forwards, files and receipt photos you upload or share, and files you send on
+            WhatsApp.
+          </li>
           <li>We never ask for, and never have, your bank or card login. We can&apos;t move money.</li>
-          <li>Original statement files are deleted after we read them, unless you turn that off in Settings.</li>
+          <li>Original statement files and receipt images are encrypted while stored and deleted after we read them, unless you turn that off in Settings.</li>
           <li>PDF passwords are encrypted and never shown back to anyone, including you.</li>
           <li>We don&apos;t sell your data or use it for advertising. You can export or delete everything at any time.</li>
         </UL>
@@ -56,7 +60,17 @@ export default function PrivacyPage() {
           forwarding confirmation code so we can show it to you during setup.
         </p>
         <H3>Uploaded and shared files</H3>
-        <p>Statement files you upload in the web app, share from your phone&apos;s share sheet, or send to our WhatsApp number.</p>
+        <p>
+          Statement files and receipt photos you upload or take with your camera in the web app, share from your phone&apos;s share sheet, or
+          send to our WhatsApp number.
+        </p>
+        <H3>Receipts</H3>
+        <p>
+          Receipt photos, invoice or e-bill PDFs, and order or payment confirmation emails you send us (by camera, upload, share, WhatsApp or
+          forwarding). We store the original encrypted, as described in section 6. From each receipt we extract the shop name, purchase date,
+          total, tax, currency and its line items (item name, quantity, price and a category for each item, which you can change), and we
+          record which of your transactions it matches. If you type a receipt&apos;s details in yourself, we store what you enter.
+        </p>
         <H3>Extracted transactions</H3>
         <p>
           From those documents we extract transaction date, description, merchant, amount, debit or credit, the card or account it belongs to
@@ -81,13 +95,17 @@ export default function PrivacyPage() {
           <li>Online or net banking, card or UPI login credentials, OTPs or PINs.</li>
           <li>Full card numbers (we keep only the last 4 digits printed on the statement).</li>
           <li>The rest of your inbox. Gmail forwards only emails that match the filter you create, and you can delete the filter at any time.</li>
-          <li>Contacts, location or device data from your phone.</li>
+          <li>Contacts, location or device data from your phone, or any photo other than the receipts you choose to take, upload or share.</li>
         </UL>
       </Section>
 
       <Section id="use" title="4. How we use it">
         <UL>
           <li>To read your statements and show your dashboard, transactions, alerts and savings suggestions.</li>
+          <li>
+            To read your receipts, match each one to the card or bank transaction that paid for it, and show what you bought (including splitting
+            a purchase across item categories in your spending breakdown).
+          </li>
           <li>To send you emails you&apos;ve asked for: spending alerts (you can turn these off), password resets and service notices.</li>
           <li>To keep the service secure, prevent abuse and fix problems.</li>
           <li>Your category corrections teach the app how to categorise your own future transactions. They aren&apos;t shared with other users.</li>
@@ -108,8 +126,9 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Anthropic, PBC</strong> (USA): when AI extraction is enabled, statement pages that our built-in parsers can&apos;t read,
-            and descriptions we can&apos;t categorise, are sent to Anthropic&apos;s API to extract transactions. Anthropic processes this
-            data under commercial terms that don&apos;t allow it to train models on our API data.
+            descriptions we can&apos;t categorise, and your receipts (photos, PDFs and receipt emails) are sent to Anthropic&apos;s API to
+            extract transactions and receipt details. Anthropic processes this data under commercial terms that don&apos;t allow it to train
+            models on our API data.
           </li>
           <li>
             <strong>Meta Platforms, Inc.</strong> (WhatsApp Business Platform): only if you link WhatsApp. Messages and files you send to our
@@ -129,7 +148,7 @@ export default function PrivacyPage() {
       <Section id="security" title="6. How it's protected">
         <UL>
           <li>All traffic uses HTTPS.</li>
-          <li>PDF passwords and stored original documents are encrypted with AES-256-GCM before they&apos;re written to disk.</li>
+          <li>PDF passwords and stored original documents, including receipt images, are encrypted with AES-256-GCM before they&apos;re written to disk.</li>
           <li>Every request is checked against your account. Nobody else&apos;s account can reach your data.</li>
           <li>Access to production systems is limited to the 3PandaLabs team and protected by multi-factor access controls.</li>
         </UL>
@@ -139,12 +158,14 @@ export default function PrivacyPage() {
       <Section id="retention" title="7. How long we keep it">
         <UL>
           <li>
-            <strong>Original files and emails:</strong> deleted once they&apos;ve been read successfully, unless you turn off &ldquo;Delete
-            original files after reading&rdquo;. Files we can&apos;t read yet (for example, waiting for a password) are kept until you retry or
-            delete them.
+            <strong>Original files, emails and receipt images:</strong> deleted once they&apos;ve been read successfully, unless you turn off
+            &ldquo;Delete original files after reading&rdquo;. Files we can&apos;t read yet (for example, waiting for a password, or a receipt
+            waiting to be read or for you to type its total) are kept until they&apos;re read or you delete them. A receipt whose details you
+            typed in keeps its image until you delete the receipt.
           </li>
           <li>
-            <strong>Transactions, accounts and alerts:</strong> kept while your account is open, so you can see trends over time.
+            <strong>Transactions, accounts, alerts and receipt details:</strong> kept while your account is open, so you can see trends over
+            time.
           </li>
           <li>
             <strong>Everything:</strong> deleted within 30 days of you deleting your account, except encrypted backups, which roll off within
@@ -164,10 +185,12 @@ export default function PrivacyPage() {
         <p>Wherever you live, you can:</p>
         <UL>
           <li>
-            <strong>Export</strong> every transaction, account and alert from <A href="/settings">Settings</A> as a JSON file.
+            <strong>Export</strong> every transaction, account, alert and receipt (with its line items) from <A href="/settings">Settings</A> as
+            a JSON file.
           </li>
           <li>
-            <strong>Correct</strong> any transaction&apos;s category, and delete any document along with its transactions.
+            <strong>Correct</strong> any transaction&apos;s or receipt item&apos;s category, fix a receipt&apos;s details or its match, and delete
+            any document or receipt.
           </li>
           <li>
             <strong>Delete</strong> your account and all its data from <A href="/settings">Settings</A>, or see{" "}

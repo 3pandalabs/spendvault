@@ -21,8 +21,12 @@ import type {
   MePatch,
   Page,
   PdfPassword,
+  Receipt,
+  ReceiptDetail,
+  ReceiptPatch,
   Savings,
   Transaction,
+  TransactionDetail,
   TransactionFilter,
   WhatsappLink,
 } from "./types";
@@ -47,6 +51,9 @@ const MESSAGE_COPY: Record<string, string> = {
   original_deleted: "The original file was deleted after parsing, so it can't be retried. Upload it again.",
   whatsapp_unavailable: "WhatsApp isn't switched on yet. Use email forwarding or upload for now.",
   rate_limited: "You're doing that too often. Wait a minute and try again.",
+  transaction_already_linked: "That transaction already has a receipt. Unlink it there first.",
+  llm_unavailable: "AI reading isn't switched on yet. Type the total instead.",
+  unsupported_file_type: "That file type isn't supported here.",
 };
 
 /** Human message for any thrown value. */
@@ -231,11 +238,12 @@ export const listDocuments = (p: { status?: DocumentStatus; limit?: number; curs
 export const getDocument = (id: string) => call<Document>(`/documents/${enc(id)}`);
 export function uploadDocuments(
   files: File[],
-  opts: { source?: "upload" | "share"; password?: string; savePassword?: boolean } = {},
+  opts: { source?: "upload" | "share"; kind?: "receipt"; password?: string; savePassword?: boolean } = {},
 ) {
   const form = new FormData();
   for (const f of files) form.append("file", f, f.name);
   form.append("source", opts.source ?? "upload");
+  if (opts.kind) form.append("kind", opts.kind);
   if (opts.password) {
     form.append("password", opts.password);
     form.append("savePassword", opts.savePassword ? "true" : "false");
@@ -256,6 +264,38 @@ export const listTransactions = (f: TransactionFilter = {}) => call<Page<Transac
 export const updateTransaction = (id: string, b: { category: string; applyToMerchant?: boolean }) =>
   call<Transaction>(`/transactions/${enc(id)}`, { method: "PATCH", body: b });
 export const listCategories = () => call<{ items: CategoryInfo[] }>("/categories", { auth: false });
+export const getTransaction = (id: string) => call<TransactionDetail>(`/transactions/${enc(id)}`);
+
+// ---- receipts ----
+
+export const listReceipts = (p: { match?: "all" | "matched" | "unmatched"; limit?: number; cursor?: string | null } = {}) =>
+  call<Page<Receipt>>(`/receipts${qs(p)}`);
+export const getReceipt = (id: string) => call<ReceiptDetail>(`/receipts/${enc(id)}`);
+export const updateReceipt = (id: string, b: ReceiptPatch) => call<ReceiptDetail>(`/receipts/${enc(id)}`, { method: "PATCH", body: b });
+export const updateReceiptItem = (id: string, itemId: string, category: string) =>
+  call<ReceiptDetail>(`/receipts/${enc(id)}/items/${enc(itemId)}`, { method: "PATCH", body: { category } });
+export const receiptCandidates = (id: string) => call<{ items: Array<Transaction & { score: number }> }>(`/receipts/${enc(id)}/candidates`);
+export const linkReceipt = (id: string, transactionId: string) =>
+  call<ReceiptDetail>(`/receipts/${enc(id)}/link`, { method: "POST", body: { transactionId } });
+export const confirmReceipt = (id: string) => call<ReceiptDetail>(`/receipts/${enc(id)}/confirm`, { method: "POST" });
+export const unlinkReceipt = (id: string) => call<ReceiptDetail>(`/receipts/${enc(id)}/unlink`, { method: "POST" });
+export const extractReceipt = (id: string) => call<ReceiptDetail>(`/receipts/${enc(id)}/extract`, { method: "POST" });
+export const rematchReceipts = () => call<{ matched: number }>("/receipts/rematch", { method: "POST" });
+export const deleteReceipt = (id: string) => call<void>(`/receipts/${enc(id)}`, { method: "DELETE" });
+
+/** The decrypted receipt image as a blob (bearer-authenticated, so no plain <img src>). */
+export async function fetchReceiptImage(id: string): Promise<Blob> {
+  const send = (token: string | null) =>
+    fetch(`${API_URL}/receipts/${enc(id)}/image`, { headers: token ? { authorization: `Bearer ${token}` } : {}, cache: "no-store" });
+  let res = await send(getTokens().access);
+  if (res.status === 401) {
+    const fresh = await refreshTokens();
+    if (!fresh) throw new ApiError(401, "Your session has ended. Please sign in again.", "session_ended");
+    res = await send(fresh);
+  }
+  if (!res.ok) throw await toError(res);
+  return res.blob();
+}
 
 // ---- dashboard / alerts / savings ----
 

@@ -8,6 +8,7 @@ import {
   LogOut,
   MoreHorizontal,
   PiggyBank,
+  Receipt,
   Settings,
   Sparkles,
   X,
@@ -37,6 +38,7 @@ const PRIMARY = [
   { href: "/savings", label: "Savings", icon: PiggyBank },
 ];
 const SECONDARY = [
+  { href: "/receipts", label: "Receipts", icon: Receipt },
   { href: "/documents", label: "Documents", icon: FileText },
   { href: "/setup", label: "Setup", icon: Sparkles },
   { href: "/settings", label: "Settings", icon: Settings },
