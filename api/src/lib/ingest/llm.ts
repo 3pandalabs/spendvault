@@ -12,7 +12,7 @@ export type LlmClient = Pick<Anthropic, "messages">;
 // tool with tool_choice auto + an explicit instruction instead.
 const NO_FORCED_TOOL = /^claude-(opus-5-5|sonnet-5-5|fable-5-1|mythos-5-1)/;
 
-function toolRequest(model: string, toolName: string) {
+export function toolRequest(model: string, toolName: string) {
   if (NO_FORCED_TOOL.test(model)) {
     return { tool_choice: { type: "auto" as const }, extra: `Respond ONLY by calling the ${toolName} tool exactly once.` };
   }
@@ -102,7 +102,7 @@ export function chunkPages(pages: string[], maxChars = LLM_CHUNK_CHARS): string[
   return chunks;
 }
 
-function toolInput(res: { content: Array<{ type: string }> }, name: string): unknown {
+export function toolInput(res: { content: Array<{ type: string }> }, name: string): unknown {
   const block = res.content.find((b) => b.type === "tool_use" && (b as Anthropic.ToolUseBlock).name === name) as Anthropic.ToolUseBlock | undefined;
   if (!block) throw new Error("llm: no tool_use block");
   return block.input;

@@ -14,7 +14,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-// Source of truth for the DB shape is drizzle/0000_init.sql (hand-written,
+// Source of truth for the DB shape is drizzle/*.sql (hand-written,
 // idempotent). Keep this file in sync with it.
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
@@ -98,7 +98,8 @@ export const pdfPasswords = pgTable("pdf_passwords", {
   createdAt: createdAt(),
 });
 
-export const DOCUMENT_STATUSES = ["received", "processing", "parsed", "needs_password", "failed", "ignored"] as const;
+// pending_extraction: receipts only (stored, waiting for AI extraction or a manual total).
+export const DOCUMENT_STATUSES = ["received", "processing", "parsed", "needs_password", "failed", "ignored", "pending_extraction"] as const;
 export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 export const DOCUMENT_SOURCES = ["email", "upload", "share", "whatsapp"] as const;
 export type DocumentSource = (typeof DOCUMENT_SOURCES)[number];
@@ -109,7 +110,7 @@ export const documents = pgTable(
     id: id(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     source: text("source").$type<DocumentSource>().notNull(),
-    // statement (PDF/CSV/XLSX) | alert (a per-transaction email body) | unknown
+    // statement (PDF/CSV/XLSX) | alert (a per-transaction email body) | receipt | unknown
     kind: text("kind").notNull().default("unknown"),
     status: text("status").$type<DocumentStatus>().notNull().default("received"),
     filename: text("filename"),
@@ -208,4 +209,62 @@ export const alerts = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("alerts_user_dedupe").on(t.userId, t.dedupeKey), index("alerts_user_created").on(t.userId, t.createdAt)],
+);
+
+// ---------------------------------------------------------------- receipts
+
+export const RECEIPT_STATUSES = ["processing", "pending_extraction", "extracted", "manual", "failed"] as const;
+export type ReceiptStatus = (typeof RECEIPT_STATUSES)[number];
+export const RECEIPT_MATCH_STATUSES = ["unmatched", "auto", "confirmed"] as const;
+export type ReceiptMatchStatus = (typeof RECEIPT_MATCH_STATUSES)[number];
+
+// One receipt per `documents` row (kind = receipt); the encrypted original is
+// documents.content_enc. drizzle/0001_receipts.sql.
+export const receipts = pgTable(
+  "receipts",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+    status: text("status").$type<ReceiptStatus>().notNull().default("processing"),
+    merchant: text("merchant"),
+    purchasedOn: date("purchased_on"),
+    total: numeric("total", { precision: 14, scale: 2 }),
+    tax: numeric("tax", { precision: 14, scale: 2 }),
+    currency: text("currency").notNull().default("INR"),
+    // Line items (+ tax) add up to the total within tolerance.
+    itemsReconciled: boolean("items_reconciled"),
+    parser: text("parser"), // "llm:receipt" | "manual"
+    error: text("error"),
+    transactionId: uuid("transaction_id").references(() => transactions.id, { onDelete: "set null" }),
+    matchStatus: text("match_status").$type<ReceiptMatchStatus>().notNull().default("unmatched"),
+    matchedAt: timestamp("matched_at", { withTimezone: true }),
+    // Transactions the user unlinked from this receipt: auto-match skips them.
+    rejectedTxnIds: uuid("rejected_txn_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("receipts_document").on(t.documentId),
+    index("receipts_user_created").on(t.userId, t.createdAt),
+    uniqueIndex("receipts_transaction").on(t.transactionId).where(sql`${t.transactionId} IS NOT NULL`),
+  ],
+);
+
+export const receiptItems = pgTable(
+  "receipt_items",
+  {
+    id: id(),
+    receiptId: uuid("receipt_id").notNull().references(() => receipts.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    name: text("name").notNull(),
+    quantity: numeric("quantity", { precision: 12, scale: 3 }),
+    unitPrice: numeric("unit_price", { precision: 14, scale: 2 }),
+    lineTotal: numeric("line_total", { precision: 14, scale: 2 }).notNull(),
+    category: text("category").notNull(),
+    categoryLocked: boolean("category_locked").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [index("receipt_items_receipt").on(t.receiptId, t.position)],
 );
