@@ -14,7 +14,7 @@ export type TocEntry = { id: string; title: string };
 export function PublicHeader() {
   return (
     <header className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-6 py-6">
-      <Logo tagClassName="hidden sm:inline" />
+      <Logo stack="phone" />
       <nav className="flex items-center gap-2 text-sm">
         <Link href="/login" className="rounded-lg px-3 py-2 whitespace-nowrap text-zinc-300 hover:bg-white/10">
           Log in
@@ -44,7 +44,7 @@ export function LegalPage({
   return (
     <div className="flex min-h-screen flex-col">
       <header className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-6 py-6">
-        <Logo tagClassName="hidden sm:inline" />
+        <Logo stack="phone" />
         <nav className="text-sm">
           <Link href="/" className="rounded-lg px-3 py-2 whitespace-nowrap text-zinc-300 hover:bg-white/10">
             Back to site
