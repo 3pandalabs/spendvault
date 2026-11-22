@@ -101,7 +101,7 @@ function TopBar() {
   return (
     <header className="sticky top-0 z-20 border-b border-white/10 bg-zinc-950/70 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:py-4">
-        <Logo href="/dashboard" tagClassName="hidden sm:inline lg:hidden xl:inline" />
+        <Logo href="/dashboard" stack="phone-lg" />
         <nav aria-label="Main" className="hidden items-center gap-1 text-sm lg:flex">
           {[...PRIMARY, ...SECONDARY].map((l) => {
             const active = isActive(pathname, l.href);
