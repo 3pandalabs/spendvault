@@ -1,3 +1,4 @@
+import { FollowUs } from "@/components/FollowUs";
 import Link from "next/link";
 
 // The bottom row is the canonical org footer copied verbatim from
@@ -18,12 +19,10 @@ export function Footer() {
         <Link href="/delete-account" className="text-zinc-400 hover:text-zinc-200">
           Delete account
         </Link>
-        <a href="mailto:hello@3pandalabs.com" className="text-zinc-400 hover:text-zinc-200">
-          Contact
-        </a>
         <span className="text-zinc-500 sm:ml-auto">SpendVault is not financial advice.</span>
       </div>
       <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-2 text-sm text-zinc-500">
+        <FollowUs />
         <span>&copy; 3PandaLabs LLC, USA.</span>
         <span>All rights reserved.</span>
         <p className="mt-1 basis-full text-xs text-zinc-500">Built by pandas. Loved by people.</p>
