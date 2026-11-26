@@ -9,7 +9,8 @@ import { hashSecret, verifySecret } from "../auth/password.js";
 import { db } from "../db/index.js";
 import { passwordResetTokens, sessions, users } from "../db/schema.js";
 import { env } from "../env.js";
-import { actionMail, sendMail } from "../lib/mailer.js";
+import { actionMail, mailerConfigured, sendMail } from "../lib/mailer.js";
+import { notifyNewUser } from "../lib/newUserAlert.js";
 import { newInboundToken, userView } from "../lib/users.js";
 import { keyedLimiter } from "../lib/clientKey.js";
 import { globalLimiter, registerRateLimit } from "../plugins/rateLimit.js";
@@ -79,6 +80,11 @@ export async function authRoutes(fastify: FastifyInstance) {
         .returning();
       // Generic failure for a taken address: no account-enumeration oracle.
       if (!user) return reply.code(409).send({ error: "registration_failed", code: "CONFLICT" });
+      // Org-inbox "SpendVault New user" alert: fire-and-forget, never awaited.
+      notifyNewUser(
+        { email: user.email, userId: user.id, displayName: user.displayName, at: user.createdAt },
+        { send: sendMail, configured: mailerConfigured, log: (m) => req.log.warn(m) },
+      );
       return reply.code(201).send(await tokens(user));
     },
   );
