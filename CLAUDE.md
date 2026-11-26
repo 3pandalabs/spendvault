@@ -16,6 +16,7 @@ Expense insights from emailed bank/credit-card statements (3PandaLabs app #7). O
 - Migrations are hand-written and idempotent (they run on container start). Never set `MIGRATION_DATABASE_URL`.
 - Pure modules (`lib/categories`, `lib/institutions`, `lib/ingest/*` parsers, `lib/insights/*` analytics, except the DB-side `insights/load.ts` + `insights/sweep.ts`) must not import env/db, so vitest runs with no infrastructure.
 - Spend totals exclude `superseded_by IS NOT NULL` (alert rows later matched by a statement line) and `NON_SPEND` categories (card bill payments, income, transfers, investments).
+- New sign-up alert (`lib/newUserAlert.ts`, 2026-11-26): `POST /auth/signup` emails "SpendVault New user" (app, email, name, UTC time, user id — never financial data) to `NEW_USER_ALERT_EMAIL` (default 3pandas@3pandalabs.com; `off` disables) through `lib/mailer.ts`. Fire-and-forget, never awaited; 409 conflicts and the SQL demo seed send nothing. Any new user-creating path must decide whether it alerts.
 - `/metrics` follows the org envelope; keep `metrics/collector.ts` byte-identical across apps. Update the admin flow diagram when routes/auth change.
 
 ## Local dev

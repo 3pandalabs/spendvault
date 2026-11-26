@@ -10,7 +10,7 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
 - `GET /metrics` (Bearer METRICS_TOKEN; 503 if unset) → org envelope; `counts`: `users, documents, documentsLast24h, documentsNeedingPassword, documentsFailed, transactions, alertsLast7d, whatsappLinkedUsers, activeSessions`
 
 ## Auth (same scheme as BorrowVault)
-- `POST /auth/signup` `{ email, password (>=10), displayName }` → 201 `AuthResponse`; 409 `registration_failed`
+- `POST /auth/signup` `{ email, password (>=10), displayName }` → 201 `AuthResponse`; 409 `registration_failed` (a 201 also fires the fire-and-forget "SpendVault New user" email to `NEW_USER_ALERT_EMAIL`)
 - `POST /auth/login` `{ email, password }` → `AuthResponse`; 401 `invalid_credentials`
 - `POST /auth/refresh` `{ refreshToken }` → `AuthResponse` (rotates)
 - `POST /auth/logout` (auth) `{ refreshToken }` → 204
