@@ -29,6 +29,7 @@ export const users = pgTable("users", {
   displayName: text("display_name").notNull(),
   // Local part of the personal forwarding address (<mailbox>+<token>@INBOUND_DOMAIN).
   inboundToken: text("inbound_token").notNull().unique(),
+  // DB default stays "INR" (no migration); sign-up sets it explicitly (lib/currency.ts, USD by default).
   baseCurrency: text("base_currency").notNull().default("INR"),
   alertEmails: boolean("alert_emails").notNull().default(true),
   // Delete the encrypted original right after a successful parse.

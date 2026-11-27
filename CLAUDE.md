@@ -13,6 +13,7 @@ Expense insights from emailed bank/credit-card statements (3PandaLabs app #7). O
 - Branch → PR → merge as `3pandalabs-admin`. Never commit to main, never `git add -A`.
 - Financial data: never log amounts, merchants, statement text, PDF passwords or email content — ids and counts only. Every query scoped by user id; other users' rows → 404.
 - Data at rest: PDF passwords and raw documents are AES-256-GCM encrypted with `DATA_KEY` (`api/src/lib/crypto.ts`). Originals are deleted after a successful parse unless the user turned that off.
+- US-first, India second: new sign-ups default to USD (`lib/currency.ts`; the web sends INR for browsers on India time; the DB column default stays "INR" so no migration). Public copy leads with US banks and $ examples; INR users keep en-IN formatting and GST/forex wording. `gmailFilterQuery()` covers every country's senders and must stay under `GMAIL_FILTER_MAX`.
 - Migrations are hand-written and idempotent (they run on container start). Never set `MIGRATION_DATABASE_URL`.
 - Pure modules (`lib/categories`, `lib/institutions`, `lib/ingest/*` parsers, `lib/insights/*` analytics, except the DB-side `insights/load.ts` + `insights/sweep.ts`) must not import env/db, so vitest runs with no infrastructure.
 - Spend totals exclude `superseded_by IS NOT NULL` (alert rows later matched by a statement line) and `NON_SPEND` categories (card bill payments, income, transfers, investments).

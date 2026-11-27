@@ -10,7 +10,7 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
 - `GET /metrics` (Bearer METRICS_TOKEN; 503 if unset) → org envelope; `counts`: `users, documents, documentsLast24h, documentsNeedingPassword, documentsFailed, transactions, alertsLast7d, whatsappLinkedUsers, activeSessions`
 
 ## Auth (same scheme as BorrowVault)
-- `POST /auth/signup` `{ email, password (>=10), displayName }` → 201 `AuthResponse`; 409 `registration_failed` (a 201 also fires the fire-and-forget "SpendVault New user" email to `NEW_USER_ALERT_EMAIL`)
+- `POST /auth/signup` `{ email, password (>=10), displayName, baseCurrency? ("USD"|"INR") }` → 201 `AuthResponse`; 409 `registration_failed` (`baseCurrency` defaults to `"USD"`; the web client sends `"INR"` for browsers on India time. A 201 also fires the fire-and-forget "SpendVault New user" email to `NEW_USER_ALERT_EMAIL`)
 - `POST /auth/login` `{ email, password }` → `AuthResponse`; 401 `invalid_credentials`
 - `POST /auth/refresh` `{ refreshToken }` → `AuthResponse` (rotates)
 - `POST /auth/logout` (auth) `{ refreshToken }` → 204
@@ -30,7 +30,7 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
     llmEnabled: boolean
   }
   ```
-- `PATCH /me` `{ displayName?, alertEmails?, deleteOriginals?, baseCurrency? ("INR"|"USD") }` → `Me`
+- `PATCH /me` `{ displayName?, alertEmails?, deleteOriginals?, baseCurrency? ("USD"|"INR") }` → `Me`
 - `DELETE /me` `{ password }` → 204. Deletes the user and ALL their data (cascade). 401 `invalid_credentials`.
 - `GET /me/export` → `{ transactions: Transaction[], accounts: Account[], alerts: Alert[] }` (JSON download of everything parsed)
 - `GET /setup/forwarding` →
@@ -38,7 +38,7 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
   { address, gmailFilterQuery: string, gmailSteps: string[],
     confirmations: Array<{ id, provider, forwardFrom: string|null, code: string|null, confirmUrl: string|null, createdAt }> }
   ```
-  `gmailFilterQuery` is a ready-to-paste Gmail search, e.g. `from:(hdfcbank.net OR icicibank.com OR ...) (statement OR "transaction alert" OR debited OR spent)`.
+  `gmailFilterQuery` is a ready-to-paste Gmail search, e.g. `from:(chase.com OR americanexpress.com OR ... OR hdfcbank.net OR ...) (statement OR transaction OR purchase OR debited OR spent ...)`; it covers every known sender (US and India) and stays under Gmail's filter length limit.
 
 ## PDF passwords (secrets are write-only; never returned)
 - `GET /pdf-passwords` → `{ items: Array<{ id, institution: string|null, label, lastUsedAt: string|null, createdAt }> }`

@@ -25,6 +25,12 @@ export const FEE_SHORT: Record<FeeType, string> = {
   other: "other charges",
 };
 
+/** US wording for the fee kinds that are named differently there (INR keeps the maps above). */
+const US_LABELS: Partial<Record<FeeType, string>> = { forex: "Foreign transaction fees", gst_on_fees: "Tax on fees" };
+const US_SHORT: Partial<Record<FeeType, string>> = { forex: "foreign transaction fee", gst_on_fees: "tax" };
+export const feeLabel = (t: FeeType, currency: string) => (currency === "INR" ? FEE_LABELS[t] : (US_LABELS[t] ?? FEE_LABELS[t]));
+export const feeShort = (t: FeeType, currency: string) => (currency === "INR" ? FEE_SHORT[t] : (US_SHORT[t] ?? FEE_SHORT[t]));
+
 // Ordered: first match wins. GST first ("GST on late fee" is GST, not a late fee).
 const FEE_RULES: Array<[FeeType, RegExp]> = [
   ["gst_on_fees", /\b(i|c|s)?gst\b|service\s*tax/i],

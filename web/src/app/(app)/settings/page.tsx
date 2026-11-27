@@ -62,8 +62,8 @@ export default function SettingsPage() {
               disabled={saving === "currency"}
               onChange={(e) => patch("currency", { baseCurrency: e.target.value as Currency })}
             >
-              <option value="INR">Indian rupee (₹)</option>
               <option value="USD">US dollar ($)</option>
+              <option value="INR">Indian rupee (₹)</option>
             </select>
           </Field>
         </Panel>

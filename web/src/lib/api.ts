@@ -10,6 +10,7 @@ import type {
   Alert,
   AuthResponse,
   CategoryInfo,
+  Currency,
   Dashboard,
   Document,
   DocumentStatus,
@@ -189,7 +190,7 @@ const enc = encodeURIComponent;
 
 // ---- auth ----
 
-export const signup = (b: { email: string; password: string; displayName: string }) =>
+export const signup = (b: { email: string; password: string; displayName: string; baseCurrency?: Currency }) =>
   call<AuthResponse>("/auth/signup", { method: "POST", body: b, auth: false });
 export const login = (b: { email: string; password: string }) =>
   call<AuthResponse>("/auth/login", { method: "POST", body: b, auth: false });

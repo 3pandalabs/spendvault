@@ -5,7 +5,12 @@ import { findLast4, inferDateOrder, parseDate, parseLooseAmount } from "./text.j
 import type { AccountKind, DateOrder, ParsedTxn, ParseResult } from "./types.js";
 
 export type Cell = string;
-export type TableOptions = { country?: "IN" | "US" | null; kinds?: Array<"credit_card" | "bank"> };
+export type TableOptions = {
+  country?: "IN" | "US" | null;
+  kinds?: Array<"credit_card" | "bank">;
+  /** User's home market; only used when `country` is unknown (see StatementOptions). */
+  homeCountry?: "IN" | "US";
+};
 
 type Columns = {
   date: number;
@@ -66,7 +71,7 @@ export function parseTable(rows: Cell[][], opts: TableOptions = {}): ParseResult
 
   const preamble = rows.slice(0, headerIdx).map((r) => r.join(" ")).join("\n");
   const body = rows.slice(headerIdx + 1);
-  const fallbackOrder: DateOrder = opts.country === "US" ? "MDY" : "DMY";
+  const fallbackOrder: DateOrder = (opts.country ?? opts.homeCountry) === "US" ? "MDY" : "DMY";
   const order = opts.country ? fallbackOrder : inferDateOrder(body.map((r) => r[c.date] ?? ""), fallbackOrder);
 
   type Raw = { postedOn: string; description: string; value: number; negative: boolean; marker: "cr" | "dr" | null; side: "debit" | "credit" | null };
@@ -122,7 +127,7 @@ export function parseTable(rows: Cell[][], opts: TableOptions = {}): ParseResult
     ...result,
     accountKind,
     last4: findLast4(preamble),
-    currency: opts.country === "US" ? "USD" : "INR",
+    currency: (opts.country ?? opts.homeCountry) === "US" ? "USD" : "INR",
     periodStart: dates[0] ?? null,
     periodEnd: dates[dates.length - 1] ?? null,
     txns,

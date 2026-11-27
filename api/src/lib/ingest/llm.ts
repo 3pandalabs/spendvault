@@ -215,7 +215,7 @@ export async function categorizeWithLlm(
   const res = await client.messages.create({
     model,
     max_tokens: 8_000,
-    system: `Categorize Indian/US card and bank transactions. Categories: ${CATEGORY_KEYS.join(", ")}. "card_payment" = paying a credit-card bill; "transfers" = person-to-person UPI/NEFT; use "other" only when nothing fits.`,
+    system: `Categorize Indian/US card and bank transactions. Categories: ${CATEGORY_KEYS.join(", ")}. "card_payment" = paying a credit-card bill; "transfers" = person-to-person Zelle/Venmo/UPI/NEFT; use "other" only when nothing fits.`,
     tools: [CATEGORIZE_TOOL as unknown as Anthropic.Tool],
     tool_choice: req.tool_choice,
     ...(req.thinking ? { thinking: req.thinking } : {}),

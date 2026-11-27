@@ -40,6 +40,13 @@ export const INSTITUTIONS: Institution[] = [
   { key: "bofa", name: "Bank of America", country: "US", kinds: ["credit_card", "bank"], senders: ["bankofamerica.com", "ealerts.bankofamerica.com"], names: /bank of america/i, passwordHint: null },
   { key: "discover", name: "Discover", country: "US", kinds: ["credit_card"], senders: ["discover.com"], names: /\bdiscover\b/i, passwordHint: null },
   { key: "wellsfargo", name: "Wells Fargo", country: "US", kinds: ["credit_card", "bank"], senders: ["wellsfargo.com"], names: /wells\s*fargo/i, passwordHint: null },
+  { key: "usbank", name: "U.S. Bank", country: "US", kinds: ["credit_card", "bank"], senders: ["usbank.com"], names: /\bu\.?\s?s\.? bank\b/i, passwordHint: null },
+  { key: "pnc", name: "PNC Bank", country: "US", kinds: ["credit_card", "bank"], senders: ["pnc.com"], names: /\bpnc\b/i, passwordHint: null },
+  { key: "truist", name: "Truist", country: "US", kinds: ["credit_card", "bank"], senders: ["truist.com"], names: /\btruist\b/i, passwordHint: null },
+  { key: "usaa", name: "USAA", country: "US", kinds: ["credit_card", "bank"], senders: ["usaa.com"], names: /\busaa\b/i, passwordHint: null },
+  { key: "navyfederal", name: "Navy Federal Credit Union", country: "US", kinds: ["credit_card", "bank"], senders: ["navyfederal.org"], names: /navy\s*federal/i, passwordHint: null },
+  { key: "ally", name: "Ally Bank", country: "US", kinds: ["bank"], senders: ["ally.com"], names: /\bally\s*(bank|financial)\b/i, passwordHint: null },
+  { key: "synchrony", name: "Synchrony", country: "US", kinds: ["credit_card"], senders: ["synchrony.com", "synchronybank.com"], names: /\bsynchrony\b/i, passwordHint: null },
 ];
 
 const BY_KEY = new Map(INSTITUTIONS.map((i) => [i.key, i]));
@@ -70,8 +77,21 @@ export function institutionFromText(text: string | null | undefined): Institutio
   return best?.inst;
 }
 
-/** Gmail search that catches statements and alert mails from every known sender. */
+/** Gmail rejects filters whose criteria run past ~1,500 characters; stay well under. */
+export const GMAIL_FILTER_MAX = 1500;
+
+/**
+ * Gmail search that catches statements and alert mails from every known
+ * sender, US and India alike (people often hold cards in both countries).
+ * US senders come first only for readability; Gmail ignores the order.
+ */
 export function gmailFilterQuery(): string {
-  const domains = [...new Set(INSTITUTIONS.filter((i) => i.country === "IN").flatMap((i) => i.senders))];
-  return `from:(${domains.join(" OR ")}) (statement OR "e-statement" OR debited OR spent OR "transaction alert" OR "txn")`;
+  const ordered = [...INSTITUTIONS.filter((i) => i.country === "US"), ...INSTITUTIONS.filter((i) => i.country !== "US")];
+  const all = [...new Set(ordered.flatMap((i) => i.senders))];
+  // Gmail's from:chase.com already matches mail from any subdomain, so drop
+  // subdomains whose parent is listed (keeps the query short).
+  const domains = all.filter((d) => !all.some((p) => p !== d && d.endsWith(`.${p}`)));
+  // US banks word alerts as "transaction" / "purchase" / "charged"; Indian ones
+  // as "debited" / "spent" / "txn".
+  return `from:(${domains.join(" OR ")}) (statement OR "e-statement" OR debited OR spent OR transaction OR purchase OR charged OR "txn")`;
 }

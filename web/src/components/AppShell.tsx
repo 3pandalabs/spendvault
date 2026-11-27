@@ -16,6 +16,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ApiError, getMe, logout } from "@/lib/api";
+import { setDisplayCurrency } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
 import { SessionProvider, useSignedIn } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [me.error, router]);
 
   if (!signedIn) return null;
+  // Dates/counts follow the base currency (en-US, or en-IN for INR). Set before
+  // children render so the first paint already uses the right locale.
+  if (me.data) setDisplayCurrency(me.data.baseCurrency);
 
   return (
     <div className="min-h-screen">

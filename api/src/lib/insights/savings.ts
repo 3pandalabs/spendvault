@@ -11,7 +11,7 @@
 //    nudge: min(3-month average, the nudge's 6-month-average target);
 //  - a duplicate charge is a one-off refund, counted as amount / 12 per month.
 
-import { classifyFee, detectDuplicates, FEE_LABELS, isFee, type FeeType } from "./fees.js";
+import { classifyFee, detectDuplicates, feeLabel, isFee, type FeeType } from "./fees.js";
 import { detectRecurring, isSubscriptionLike, type Recurring } from "./recurring.js";
 import {
   addMonths,
@@ -116,31 +116,40 @@ export function computeSavings(opts: { txns: readonly Txn[]; currency: string; t
     feeAgg.set(k, a);
   }
   const feeItems = [...feeAgg.entries()]
-    .map(([type, a]) => ({ type, label: FEE_LABELS[type], amount: round2(a.amount), count: a.count }))
+    .map(([type, a]) => ({ type, label: feeLabel(type, currency), amount: round2(a.amount), count: a.count }))
     .sort((a, b) => b.amount - a.amount);
   const gst = feeAgg.get("gst_on_fees")?.amount ?? 0;
   const taxable = [...feeAgg.entries()].filter(([k]) => k !== "gst_on_fees").reduce((s, [, a]) => s + a.amount, 0);
   const gstRate = taxable > 0 ? gst / taxable : 0;
+  // INR copy mentions GST (charged on Indian card fees); USD copy uses US card terms.
+  const inr = currency === "INR";
+  const tax = inr ? " (with GST)" : "";
   const FEE_TIPS: Partial<Record<FeeType, (amt: string) => [string, string]>> = {
     late_fee: (a) => [
       "Turn on autopay for the total amount due",
-      `You paid ${a} in late payment fees (with GST) in the last 12 months. Autopay for the full amount due on every card means you never pay one again.`,
+      `You paid ${a} in late payment fees${tax} in the last 12 months. Autopay for the full amount due on every card means you never pay one again.`,
     ],
     interest: (a) => [
       "Stop paying card interest",
-      `You paid ${a} in interest and finance charges (with GST) in the last 12 months. Paying the full balance each month, or moving a balance you can't clear to a cheaper loan, stops it.`,
+      `You paid ${a} in interest and finance charges${tax} in the last 12 months. Paying the full balance each month, or moving a balance you can't clear to a cheaper loan, stops it.`,
     ],
-    forex: (a) => [
-      "Use a zero-forex card for foreign spends",
-      `You paid ${a} in forex markup (with GST) in the last 12 months. A card with no forex markup for international and foreign-currency payments would save most of it.`,
-    ],
+    forex: (a) =>
+      inr
+        ? [
+            "Use a zero-forex card for foreign spends",
+            `You paid ${a} in forex markup (with GST) in the last 12 months. A card with no forex markup for international and foreign-currency payments would save most of it.`,
+          ]
+        : [
+            "Use a card with no foreign transaction fee",
+            `You paid ${a} in foreign transaction fees in the last 12 months. A card with no foreign transaction fee for purchases abroad and in other currencies would save most of it.`,
+          ],
     annual_fee: (a) => [
       "Ask for an annual-fee waiver",
-      `You paid ${a} in annual or membership fees (with GST) in the last 12 months. Issuers often waive it on request or above a spend target; otherwise a lifetime-free card costs nothing.`,
+      `You paid ${a} in annual or membership fees${tax} in the last 12 months. Issuers often waive it on request or above a spend target; otherwise a ${inr ? "lifetime-free" : "no-annual-fee"} card costs nothing.`,
     ],
     cash_advance: (a) => [
       "Avoid cash withdrawals on a credit card",
-      `You paid ${a} in cash-advance fees (with GST) in the last 12 months, and interest starts on day one. Withdraw from your bank account instead.`,
+      `You paid ${a} in cash-advance fees${tax} in the last 12 months, and interest starts on day one. Withdraw from your bank account instead.`,
     ],
   };
   for (const [type, a] of feeAgg) {
