@@ -4,9 +4,9 @@ import {
   Check,
   EyeOff,
   FileDown,
+  FileText,
   KeyRound,
   LayoutDashboard,
-  Lock,
   Mail,
   MessageCircle,
   PiggyBank,
@@ -34,7 +34,7 @@ const STEPS = [
   {
     icon: KeyRound,
     title: "Save the PDF password once",
-    body: "Most Indian statements are locked. Save each bank's password once, encrypted, and every future statement opens on its own.",
+    body: "Some banks lock statement PDFs with a password. Save that bank's password once, encrypted, and every future statement opens on its own.",
   },
   {
     icon: LayoutDashboard,
@@ -44,26 +44,27 @@ const STEPS = [
 ];
 
 const DEMO = [
-  { key: "food_delivery", amount: 8420, share: 0.24 },
-  { key: "shopping", amount: 6910, share: 0.2 },
-  { key: "groceries", amount: 5230, share: 0.15 },
-  { key: "subscriptions", amount: 2870, share: 0.08 },
-  { key: "transport", amount: 2140, share: 0.06 },
+  { key: "groceries", amount: 742, share: 0.21 },
+  { key: "food_delivery", amount: 608, share: 0.17 },
+  { key: "shopping", amount: 531, share: 0.15 },
+  { key: "transport", amount: 284, share: 0.08 },
+  { key: "subscriptions", amount: 167, share: 0.05 },
 ] as const;
 
 // Example inbox rows for the hero animation (not real emails).
 const INBOX = [
-  { from: "HDFC Bank", subject: "Credit card statement" },
-  { from: "ICICI Bank", subject: "Account e-statement" },
-  { from: "SBI Card", subject: "Monthly statement" },
+  { from: "Chase", subject: "Your credit card statement is ready" },
+  { from: "American Express", subject: "Your monthly statement" },
+  { from: "Bank of America", subject: "Checking eStatement" },
 ];
 
-const BANKS = ["HDFC", "ICICI", "SBI Card", "Axis", "Kotak", "Amex", "and more"];
+// US banks first; Indian banks (HDFC, ICICI, SBI Card, Axis, Kotak, ...) are supported too.
+const BANKS = ["Chase", "Amex", "Citi", "Capital One", "Bank of America", "Wells Fargo", "Discover", "+ Indian banks", "and more"];
 
 const FEATURES = [
   { icon: LayoutDashboard, t: "One dashboard", b: "Spend by category, day, merchant and card, month over month." },
   { icon: Bell, t: "Spike alerts", b: "A heads-up when a category or a single day runs well above your usual." },
-  { icon: PiggyBank, t: "Savings ideas", b: "Forgotten subscriptions, price hikes, late fees, forex markups and double charges." },
+  { icon: PiggyBank, t: "Savings ideas", b: "Forgotten subscriptions, price hikes, late fees, foreign transaction fees and double charges." },
   { icon: Upload, t: "Four ways in", b: "Gmail forwarding, upload, your phone's Share button, or WhatsApp." },
 ];
 
@@ -76,22 +77,24 @@ const WAYS_IN = [
 
 // The kinds of savings ideas SpendVault looks for (FEATURES above); amounts are examples.
 const SAVINGS = [
-  { t: "Forgotten subscription", amount: 649 },
-  { t: "Price hike", amount: 200 },
-  { t: "Late fee", amount: 1180 },
-  { t: "Forex markup", amount: 412 },
-  { t: "Double charge", amount: 899 },
+  { t: "Forgotten subscription", amount: 15.99 },
+  { t: "Price hike", amount: 3 },
+  { t: "Late fee", amount: 40 },
+  { t: "Foreign transaction fee", amount: 27.6 },
+  { t: "Double charge", amount: 64.5 },
 ];
 
 const PRIVACY = [
   { icon: EyeOff, t: "Only what you forward", b: "We only ever see the emails your filter forwards. The rest of your inbox stays yours." },
-  { icon: ShieldCheck, t: "No bank login", b: "We never ask for net-banking or card credentials. We can't move money." },
+  { icon: ShieldCheck, t: "No bank login", b: "We never ask for your online banking or card login. We can't move money." },
   { icon: Trash2, t: "Originals deleted", b: "Statement files are deleted after we read them. We keep only the transactions." },
   { icon: KeyRound, t: "Passwords encrypted", b: "PDF passwords are encrypted at rest and never shown again, not even to you." },
   { icon: FileDown, t: "Export or delete anytime", b: "Download everything as a file, or delete your account and all data in one step." },
 ];
 
-const inr = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
+// Example amounts are US dollars; the app itself also supports INR.
+const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const usdCents = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 
 const delay = (s: number) => ({ "--d": `${s}s` }) as React.CSSProperties;
 
@@ -217,7 +220,7 @@ export default function Home() {
                       </span>
                       <span className="truncate text-zinc-300">{s.t}</span>
                     </span>
-                    <span className="font-medium text-emerald-300 tabular">{inr.format(s.amount)}</span>
+                    <span className="font-medium text-emerald-300 tabular">{usdCents.format(s.amount)}</span>
                   </li>
                 ))}
               </ul>
@@ -319,7 +322,7 @@ function HeroStage() {
               <span className="min-w-0">
                 <span className="block truncate text-[13px] font-medium text-zinc-200">{m.from}</span>
                 <span className="flex items-center gap-1 truncate text-[11px] text-zinc-500">
-                  <Lock className="size-3 shrink-0" aria-hidden /> {m.subject} · PDF
+                  <FileText className="size-3 shrink-0" aria-hidden /> {m.subject} · PDF
                 </span>
               </span>
               <span
@@ -349,7 +352,7 @@ function HeroStage() {
             <p className="font-mono text-xs tracking-widest text-amber-300/80 uppercase">Spent in November</p>
             <p className="text-xs font-medium text-up">↑ 18% vs 3-month avg</p>
           </div>
-          <p className="mt-2 text-3xl font-semibold tracking-tight tabular">{inr.format(34820)}</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight tabular">{usd.format(3486)}</p>
           <div className="mt-4 flex h-2.5 overflow-hidden rounded-full bg-white/5">
             {DEMO.map((d, i) => (
               <div
@@ -366,7 +369,7 @@ function HeroStage() {
                   <span className="size-2.5 shrink-0 rounded-full" style={{ background: CATEGORY_META[d.key].color }} />
                   <span className="truncate text-zinc-300">{CATEGORY_META[d.key].label}</span>
                 </span>
-                <span className="font-medium tabular">{inr.format(d.amount)}</span>
+                <span className="font-medium tabular">{usd.format(d.amount)}</span>
               </li>
             ))}
           </ul>
@@ -374,7 +377,7 @@ function HeroStage() {
             <Bell className="mt-0.5 size-4 shrink-0 text-red-300" />
             <p>
               <span className="font-medium text-red-100">Food delivery is up 62%</span>
-              <span className="text-zinc-400"> this month vs your usual {inr.format(5200)}.</span>
+              <span className="text-zinc-400"> this month vs your usual {usd.format(375)}.</span>
             </p>
           </div>
         </div>

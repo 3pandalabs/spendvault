@@ -9,6 +9,7 @@ import { accounts, categoryRules, documents, pdfPasswords, transactions, users }
 import { env } from "../../env.js";
 import { categorize, isCategory, type Category } from "../categories.js";
 import { decrypt, decryptString, encrypt } from "../crypto.js";
+import { homeCountryOf } from "../currency.js";
 import { institutionByKey, institutionFromText, type Institution } from "../institutions.js";
 import { toDbAmount } from "../money.js";
 import { replySafely } from "../whatsapp.js";
@@ -58,7 +59,7 @@ async function passwordCandidates(userId: string, institution: string | null, gi
 
 // ---------------------------------------------------------------- extraction
 
-async function fromStatementText(pages: string[], inst: Institution | undefined): Promise<ParseResult> {
+async function fromStatementText(pages: string[], inst: Institution | undefined, homeCountry: "IN" | "US"): Promise<ParseResult> {
   const client = llm();
   if (client) {
     try {
@@ -69,15 +70,16 @@ async function fromStatementText(pages: string[], inst: Institution | undefined)
     }
   }
   const text = pages.join("\n");
-  const rules = parseStatementText(text, { country: inst?.country, kinds: inst?.kinds });
+  const rules = parseStatementText(text, { country: inst?.country, kinds: inst?.kinds, homeCountry });
   if (!rules.txns.length && text.length < 4000 && looksLikeAlert(text)) return parseAlertText(text);
   return rules;
 }
 
 type Extracted = { result: ParseResult; inst: Institution | undefined; usedPassword: Candidate | null };
 
-async function extract(doc: DocRow, buf: Buffer, opts: ProcessOptions): Promise<Extracted> {
+async function extract(doc: DocRow, buf: Buffer, opts: ProcessOptions, homeCountry: "IN" | "US"): Promise<Extracted> {
   let inst = institutionByKey(doc.institution);
+  const table = () => ({ country: inst?.country, kinds: inst?.kinds, homeCountry });
   const type = fileTypeOf(doc.mimeType, doc.filename, buf.subarray(0, 8));
   switch (type) {
     case "pdf": {
@@ -85,15 +87,15 @@ async function extract(doc: DocRow, buf: Buffer, opts: ProcessOptions): Promise<
       const pdf = await extractPdfText(buf, candidates.map((c) => c.secret));
       if (!pdf.ok) throw new NeedsPassword();
       inst ??= institutionFromText(pdf.pages[0]?.slice(0, 3000));
-      const result = await fromStatementText(pdf.pages, inst);
+      const result = await fromStatementText(pdf.pages, inst, homeCountry);
       return { result, inst, usedPassword: pdf.passwordIndex === null ? null : candidates[pdf.passwordIndex] };
     }
     case "csv":
-      return { result: parseCsvBuffer(buf, { country: inst?.country, kinds: inst?.kinds }), inst, usedPassword: null };
+      return { result: parseCsvBuffer(buf, table()), inst, usedPassword: null };
     case "xlsx":
-      return { result: await parseXlsxBuffer(buf, { country: inst?.country, kinds: inst?.kinds }), inst, usedPassword: null };
+      return { result: await parseXlsxBuffer(buf, table()), inst, usedPassword: null };
     case "xls":
-      return { result: parseXlsBuffer(buf, { country: inst?.country, kinds: inst?.kinds }), inst, usedPassword: null };
+      return { result: parseXlsBuffer(buf, table()), inst, usedPassword: null };
     case "text": {
       const text = buf.toString("utf8");
       inst ??= institutionFromText(text.slice(0, 3000));
@@ -111,7 +113,7 @@ async function extract(doc: DocRow, buf: Buffer, opts: ProcessOptions): Promise<
         }
         return { result, inst, usedPassword: null };
       }
-      return { result: await fromStatementText([text], inst), inst, usedPassword: null };
+      return { result: await fromStatementText([text], inst, homeCountry), inst, usedPassword: null };
     }
     case "image": {
       const client = llm();
@@ -308,7 +310,7 @@ export async function processDocument(documentId: string, opts: ProcessOptions =
   await db.update(documents).set({ status: "processing", error: null }).where(eq(documents.id, doc.id));
   try {
     const buf = decrypt(doc.contentEnc, env.DATA_KEY);
-    const ex = await extract(doc, buf, opts);
+    const ex = await extract(doc, buf, opts, homeCountryOf(user.baseCurrency));
 
     if (ex.usedPassword?.savedId) {
       await db.update(pdfPasswords).set({ lastUsedAt: new Date() }).where(and(eq(pdfPasswords.id, ex.usedPassword.savedId), eq(pdfPasswords.userId, doc.userId)));

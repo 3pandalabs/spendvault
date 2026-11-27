@@ -21,7 +21,8 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     siteName: "SpendVault by 3PandaLabs",
-    locale: "en_IN",
+    locale: "en_US",
+    alternateLocale: ["en_IN"],
     url: SITE_URL,
     title: TITLE,
     description: DESCRIPTION,
@@ -40,7 +41,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en-IN">
+    <html lang="en-US">
       <body className={`min-h-screen bg-zinc-950 text-zinc-100 antialiased ${inter.variable}`}>
         <GradientBackdrop />
         {children}

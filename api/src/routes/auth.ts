@@ -10,6 +10,7 @@ import { db } from "../db/index.js";
 import { passwordResetTokens, sessions, users } from "../db/schema.js";
 import { env } from "../env.js";
 import { actionMail, mailerConfigured, sendMail } from "../lib/mailer.js";
+import { BASE_CURRENCIES, signupBaseCurrency } from "../lib/currency.js";
 import { notifyNewUser } from "../lib/newUserAlert.js";
 import { newInboundToken, userView } from "../lib/users.js";
 import { keyedLimiter } from "../lib/clientKey.js";
@@ -63,6 +64,7 @@ export async function authRoutes(fastify: FastifyInstance) {
           email,
           password,
           displayName: z.string().trim().min(1).max(120),
+          baseCurrency: z.enum(BASE_CURRENCIES).optional(),
         }),
       },
     },
@@ -75,6 +77,7 @@ export async function authRoutes(fastify: FastifyInstance) {
           passwordHash: await hashSecret(b.password),
           displayName: b.displayName,
           inboundToken: newInboundToken(),
+          baseCurrency: signupBaseCurrency(b.baseCurrency),
         })
         .onConflictDoNothing({ target: users.email })
         .returning();

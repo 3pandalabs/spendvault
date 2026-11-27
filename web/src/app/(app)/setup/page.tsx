@@ -240,7 +240,7 @@ function PasswordsCard() {
       <CardHead
         icon={<KeyRound />}
         title="2. Save your PDF passwords"
-        sub="Most Indian banks lock statement PDFs. Save the password once and we'll open every future statement automatically."
+        sub="Some banks lock statement PDFs with a password (most Indian banks do). Save it once and we'll open every future statement automatically."
         done={(pw.data?.items.length ?? 0) > 0}
       />
       <p className="mb-4 flex items-start gap-2 rounded-lg bg-bg-subtle p-3 text-sm text-fg-muted">
@@ -287,7 +287,7 @@ function PasswordsCard() {
               ))}
             </select>
           </Field>
-          <Field label="Label" htmlFor="pw-label" hint="So you can tell them apart, e.g. “HDFC Regalia”.">
+          <Field label="Label" htmlFor="pw-label" hint="So you can tell them apart, e.g. “Chase Sapphire” or “HDFC Regalia”.">
             <Input
               id="pw-label"
               maxLength={80}

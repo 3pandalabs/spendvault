@@ -8,6 +8,7 @@ import { ErrorText, Field } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError, errorMessage, setTokens, signup } from "@/lib/api";
+import { guessBaseCurrency } from "@/lib/format";
 import { useNextPath } from "@/lib/hooks";
 
 export default function SignupPage() {
@@ -25,7 +26,7 @@ export default function SignupPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await signup({ ...form, displayName: form.displayName.trim() });
+      const res = await signup({ ...form, displayName: form.displayName.trim(), baseCurrency: guessBaseCurrency() });
       setTokens(res.accessToken, res.refreshToken);
       router.push(next ?? "/setup");
     } catch (err) {

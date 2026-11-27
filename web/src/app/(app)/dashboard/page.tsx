@@ -10,7 +10,7 @@ import { EmptyState, LoadError, PageHeader, Panel, PanelTitle, Skeleton, selectC
 import { Button } from "@/components/ui/button";
 import { getDashboard } from "@/lib/api";
 import { ACCOUNT_COLORS, categoryColor, categoryLabel } from "@/lib/categories";
-import { fmtDay, fmtMonth, fmtMonthShort, fmtTimestamp, money, monthRange } from "@/lib/format";
+import { fmtCount, fmtDay, fmtMonth, fmtMonthShort, fmtTimestamp, money, monthRange } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
 import { useSession } from "@/lib/session";
 import type { Dashboard } from "@/lib/types";
@@ -113,7 +113,7 @@ function DashboardBody({ d }: { d: Dashboard }) {
         <Panel className="sm:col-span-1">
           <p className="text-sm text-fg-muted">Spent in {fmtMonthShort(d.month)}</p>
           <p className="mt-1 text-3xl font-semibold tracking-tight tabular">{money(t.spend, cur)}</p>
-          <p className="mt-1 text-xs text-fg-muted">{t.txnCount.toLocaleString("en-IN")} transactions</p>
+          <p className="mt-1 text-xs text-fg-muted">{fmtCount(t.txnCount)} transactions</p>
         </Panel>
         <Panel>
           <p className="text-sm text-fg-muted">vs last month</p>

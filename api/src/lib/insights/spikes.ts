@@ -3,7 +3,7 @@
 // USD by util.threshold (₹1,000 → $25).
 
 import type { AlertKind } from "../../db/schema.js";
-import { classifyFee, FEE_SHORT, isFee, type FeeType } from "./fees.js";
+import { classifyFee, feeShort, isFee, type FeeType } from "./fees.js";
 import { detectDuplicates } from "./fees.js";
 import { detectRecurring, isSubscriptionLike, type Recurring } from "./recurring.js";
 import {
@@ -255,11 +255,13 @@ export function feeAlerts(ctx: Ctx): AlertCandidate[] {
     const byType = new Map<FeeType, number>();
     for (const t of inMonth) byType.set(classifyFee(t.descriptionRaw), (byType.get(classifyFee(t.descriptionRaw)) ?? 0) + t.amount);
     const total = inMonth.reduce((s, t) => s + t.amount, 0);
-    const parts = [...byType.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${FEE_SHORT[k]} ${formatMoney(v, ctx.currency)}`);
+    const parts = [...byType.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${feeShort(k, ctx.currency)} ${formatMoney(v, ctx.currency)}`);
     const advice = byType.has("late_fee") || byType.has("interest")
       ? " Paying the full amount due on time avoids most of these."
       : byType.has("forex")
-        ? " A zero-forex card avoids markup on foreign spends."
+        ? ctx.currency === "INR"
+          ? " A zero-forex card avoids markup on foreign spends."
+          : " A card with no foreign transaction fee avoids these."
         : "";
     return {
       kind: "fee" as const,

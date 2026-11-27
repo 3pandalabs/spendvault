@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { errorMessage, listAccounts, listTransactions, updateTransaction } from "@/lib/api";
 import { CATEGORY_KEYS, categoryColor, categoryLabel } from "@/lib/categories";
-import { fmtDate, fmtMonth, moneyExact, monthRange } from "@/lib/format";
+import { fmtCount, fmtDate, fmtMonth, moneyExact, monthRange } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
 import type { Account, CategoryKey, Direction, Transaction, TransactionFilter } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -223,7 +223,7 @@ function Transactions() {
           </div>
           <div className="mt-4 flex flex-col items-center gap-2">
             <p className="text-xs text-fg-muted">
-              Showing {items.length.toLocaleString("en-IN")} transaction{items.length === 1 ? "" : "s"}
+              Showing {fmtCount(items.length)} transaction{items.length === 1 ? "" : "s"}
             </p>
             {cursor ? (
               <Button variant="outline" onClick={loadMore} disabled={loadingMore}>

@@ -13,6 +13,12 @@ export type StatementOptions = {
   country?: "IN" | "US" | null;
   /** Institution kinds, if known (a bank-only institution → bank). */
   kinds?: Array<"credit_card" | "bank">;
+  /**
+   * The user's home market (from their base currency). Used only when the
+   * institution is unknown: date-order tie-break and currency fallback.
+   * Omitted = "IN", the original behaviour.
+   */
+  homeCountry?: "IN" | "US";
 };
 
 const LINE_DATE = new RegExp(`^\\s*(${DATE_SRC}|\\d{1,2}/\\d{1,2}(?![/\\d]))`, "i");
@@ -101,7 +107,7 @@ function cleanDescription(s: string, order: DateOrder): string {
 }
 
 export function detectOrder(text: string, opts: StatementOptions): DateOrder {
-  const fallback: DateOrder = opts.country === "US" ? "MDY" : "DMY";
+  const fallback: DateOrder = (opts.country ?? opts.homeCountry) === "US" ? "MDY" : "DMY";
   const samples: string[] = [];
   for (const line of text.split("\n")) {
     const m = line.match(LINE_DATE);
@@ -220,7 +226,12 @@ export function parseStatementText(text: string, opts: StatementOptions = {}): P
     sourceKind: "statement",
     accountKind,
     last4: findLast4(text.slice(0, 4000)),
-    currency: opts.country === "US" || (/\$\s?\d/.test(text) && !/₹|rs\.|inr/i.test(text)) ? "USD" : "INR",
+    currency:
+      opts.country === "US" || (/\$\s?\d/.test(text) && !/₹|rs\.|inr/i.test(text))
+        ? "USD"
+        : opts.country || /₹|rs\.|inr/i.test(text) || opts.homeCountry !== "US"
+          ? "INR"
+          : "USD",
     periodStart: period.start ?? dates[0] ?? null,
     periodEnd: period.end ?? dates[dates.length - 1] ?? null,
     previousBalance: previousBalance === null ? null : Math.abs(previousBalance),

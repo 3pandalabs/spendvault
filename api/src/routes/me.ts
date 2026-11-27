@@ -9,6 +9,7 @@ import { db } from "../db/index.js";
 import { accounts, alerts, forwardingConfirmations, transactions, users } from "../db/schema.js";
 import { env } from "../env.js";
 import { keyedLimiter } from "../lib/clientKey.js";
+import { BASE_CURRENCIES } from "../lib/currency.js";
 import { gmailFilterQuery } from "../lib/institutions.js";
 import { userView } from "../lib/users.js";
 import { alertView } from "../lib/insights/load.js";
@@ -78,7 +79,7 @@ export async function meRoutes(fastify: FastifyInstance) {
             displayName: z.string().trim().min(1).max(120),
             alertEmails: z.boolean(),
             deleteOriginals: z.boolean(),
-            baseCurrency: z.enum(["INR", "USD"]),
+            baseCurrency: z.enum(BASE_CURRENCIES),
           })
           .partial()
           .strict(),

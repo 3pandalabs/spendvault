@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { deleteDocument, errorMessage, listDocuments, retryDocument } from "@/lib/api";
 import { fmtBytes, fmtDate, fmtTimestamp, money } from "@/lib/format";
 import { useAsync, usePoll } from "@/lib/hooks";
+import { useSession } from "@/lib/session";
 import type { Document, DocumentStatus } from "@/lib/types";
 
 const STATUS: Record<DocumentStatus, [string, BadgeVariant]> = {
@@ -124,6 +125,7 @@ export default function DocumentsPage() {
 }
 
 function DocRow({ d, onChange }: { d: Document; onChange: (d: Document | null) => void }) {
+  const { me } = useSession();
   const src = SOURCE_META[d.source] ?? SOURCE_META.upload;
   const Icon = src.icon;
   const [status, variant] = STATUS[d.status] ?? [d.status, "muted"];
@@ -198,7 +200,7 @@ function DocRow({ d, onChange }: { d: Document; onChange: (d: Document | null) =
               <span>
                 {d.txnCount} transaction{d.txnCount === 1 ? "" : "s"}
               </span>
-              {d.statementTotal != null ? <span className="text-fg-muted">Statement total {money(d.statementTotal)}</span> : null}
+              {d.statementTotal != null ? <span className="text-fg-muted">Statement total {money(d.statementTotal, me.baseCurrency)}</span> : null}
               {d.reconciled ? (
                 <span className="inline-flex items-center gap-1 text-down">
                   <CheckCircle2 className="size-3.5" /> Totals match

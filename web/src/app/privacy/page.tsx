@@ -78,7 +78,7 @@ export default function PrivacyPage() {
 
       <Section id="not-collect" title="3. What we never collect">
         <UL>
-          <li>Net banking, card or UPI login credentials, OTPs or PINs.</li>
+          <li>Online or net banking, card or UPI login credentials, OTPs or PINs.</li>
           <li>Full card numbers (we keep only the last 4 digits printed on the statement).</li>
           <li>The rest of your inbox. Gmail forwards only emails that match the filter you create, and you can delete the filter at any time.</li>
           <li>Contacts, location or device data from your phone.</li>
