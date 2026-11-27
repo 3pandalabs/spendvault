@@ -1,0 +1,168 @@
+/* Home page only (imported by app/page.tsx). Everything is prefixed `spv-` so
+   none of it can leak into the dashboard. Motion is decoration: every
+   animation is switched off under prefers-reduced-motion at the bottom, and
+   the static end state (filled bars, alert shown) is what you see then. */
+
+.spv-display {
+  letter-spacing: -0.035em;
+}
+
+/* Amber-to-emerald shimmer on the accent words (money in, money saved). */
+.spv-shimmer {
+  background: linear-gradient(100deg, #fbbf24 0%, #fb923c 30%, #34d399 62%, #fbbf24 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: spv-shimmer 7s ease-in-out infinite;
+}
+@keyframes spv-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Hand-drawn underline. */
+.spv-scribble { position: relative; display: inline-block; }
+.spv-scribble svg {
+  position: absolute; left: 0; right: 0; bottom: -0.14em; width: 100%; height: 0.3em; overflow: visible;
+}
+.spv-scribble path {
+  stroke-dasharray: 420; stroke-dashoffset: 420;
+  animation: spv-draw 1.3s 0.4s cubic-bezier(.65,0,.35,1) forwards;
+}
+@keyframes spv-draw { to { stroke-dashoffset: 0; } }
+
+.spv-live { animation: spv-live 1.4s ease-in-out infinite; }
+@keyframes spv-live { 50% { opacity: .25; } }
+
+/* ---------- Hero stage: inbox -> vault -> dashboard ---------- */
+.spv-float { animation: spv-float 8s ease-in-out infinite; }
+@keyframes spv-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.spv-tilt { transform: rotate(-2.5deg); }
+
+/* Three inbox rows take turns being "forwarded": 9s cycle, 3s per row. */
+.spv-row { border-color: rgb(255 255 255 / .06); animation: spv-row 9s linear infinite backwards; animation-delay: var(--d, 0s); }
+@keyframes spv-row {
+  0% { background: rgb(251 191 36 / 0); border-color: rgb(255 255 255 / .06); }
+  3% { background: rgb(251 191 36 / .1); border-color: rgb(251 191 36 / .45); }
+  30% { background: rgb(251 191 36 / .1); border-color: rgb(251 191 36 / .45); }
+  33.3%, 100% { background: rgb(251 191 36 / 0); border-color: rgb(255 255 255 / .06); }
+}
+.spv-sent { opacity: 0; animation: spv-sent 9s linear infinite backwards; animation-delay: var(--d, 0s); }
+@keyframes spv-sent {
+  0%, 8% { opacity: 0; transform: translateX(-6px); }
+  12%, 30% { opacity: 1; transform: translateX(0); }
+  33.3%, 100% { opacity: 0; transform: translateX(0); }
+}
+
+/* The envelope that drops from the inbox into the dashboard every 3s. */
+.spv-pipe {
+  background: repeating-linear-gradient(180deg, rgb(251 191 36 / .55) 0 6px, transparent 6px 12px);
+  background-size: 100% 24px;
+  animation: spv-pipe 1s linear infinite;
+}
+@keyframes spv-pipe { to { background-position: 0 24px; } }
+.spv-drop { animation: spv-drop 3s cubic-bezier(.5,0,.5,1) infinite; }
+@keyframes spv-drop {
+  0% { opacity: 0; transform: translate(-50%, -6px) scale(.8); }
+  15% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  70% { opacity: 1; transform: translate(-50%, 46px) scale(1); }
+  85%, 100% { opacity: 0; transform: translate(-50%, 56px) scale(.6); }
+}
+
+/* Dashboard bars grow in on load. */
+.spv-grow { transform-origin: left; transform: scaleX(0); animation: spv-grow 1.1s cubic-bezier(.2,.8,.2,1) forwards; animation-delay: var(--d, .3s); }
+@keyframes spv-grow { to { transform: scaleX(1); } }
+.spv-in { opacity: 0; animation: spv-in .6s ease-out forwards; animation-delay: var(--d, 0s); }
+@keyframes spv-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* "Updating" sheen across the dashboard card each cycle. */
+.spv-sheen { position: relative; overflow: hidden; }
+.spv-sheen::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, rgb(255 255 255 / .06) 50%, transparent 60%);
+  transform: translateX(-100%);
+  animation: spv-sheen 3s ease-in-out infinite;
+  animation-delay: 2.1s;
+}
+@keyframes spv-sheen { 0%, 55% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+.spv-alert { animation: spv-in .6s ease-out 1.6s both, spv-ring 3s ease-in-out 2.4s infinite; }
+@keyframes spv-ring {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(248 113 113 / 0); }
+  40% { box-shadow: 0 0 0 6px rgb(248 113 113 / .12); }
+}
+
+/* ---------- Marquee ---------- */
+.spv-marquee { overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent); }
+.spv-marquee-track { display: flex; width: max-content; animation: spv-marquee 38s linear infinite; }
+@keyframes spv-marquee { to { transform: translateX(-50%); } }
+
+/* ---------- Sections ---------- */
+.spv-tile { transition: transform .25s ease, border-color .25s ease; }
+.spv-tile:hover { transform: translateY(-3px); border-color: rgb(251 191 36 / .35); }
+
+.spv-dash {
+  background: repeating-linear-gradient(90deg, rgb(251 191 36 / .5) 0 8px, transparent 8px 16px);
+  background-size: 32px 100%;
+  animation: spv-dash 1.6s linear infinite;
+}
+@keyframes spv-dash { to { background-position: 32px 0; } }
+
+/* Forwarding-address "typing" caret. */
+.spv-caret { display: inline-block; width: 2px; height: 1em; vertical-align: -0.15em; background: #fbbf24; animation: spv-live 1s steps(1) infinite; }
+
+/* Savings list: items tick off one after another. */
+.spv-tick { opacity: .35; animation: spv-tick 8s ease-in-out infinite; animation-delay: var(--d, 0s); }
+@keyframes spv-tick {
+  0%, 4% { opacity: .35; }
+  10%, 70% { opacity: 1; }
+  80%, 100% { opacity: .35; }
+}
+
+/* Rotating conic border on the privacy panel. */
+@property --spv-angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+.spv-ring-border {
+  border-radius: 1.25rem; padding: 1px;
+  background: conic-gradient(from var(--spv-angle), rgb(251 191 36 / .55), rgb(52 211 153 / .25), rgb(167 139 250 / .35), rgb(251 191 36 / .55));
+  animation: spv-spin 10s linear infinite;
+}
+@keyframes spv-spin { to { --spv-angle: 360deg; } }
+
+.spv-glow {
+  background:
+    radial-gradient(60% 80% at 50% 0%, rgb(251 191 36 / .22), transparent 70%),
+    radial-gradient(50% 60% at 85% 100%, rgb(52 211 153 / .14), transparent 70%),
+    rgb(255 255 255 / .02);
+}
+.spv-btn-shine { position: relative; overflow: hidden; }
+.spv-btn-shine::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(110deg, transparent 35%, rgb(255 255 255 / .55) 50%, transparent 65%);
+  transform: translateX(-120%);
+  animation: spv-shine 4.5s ease-in-out infinite;
+}
+@keyframes spv-shine { 0%, 60% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .spv-shimmer, .spv-float, .spv-row, .spv-pipe, .spv-marquee-track, .spv-dash,
+  .spv-caret, .spv-tick, .spv-ring-border, .spv-btn-shine::after, .spv-sheen::after, .spv-live {
+    animation: none !important;
+  }
+  .spv-scribble path { animation: none; stroke-dashoffset: 0; }
+  .spv-grow { animation: none; transform: none; }
+  .spv-in, .spv-alert { animation: none; opacity: 1; }
+  .spv-sent { animation: none; opacity: 0; }
+  .spv-sent[data-first] { opacity: 1; }
+  .spv-row[data-first] { background: rgb(251 191 36 / .1); border-color: rgb(251 191 36 / .45); }
+  .spv-row { animation: none; }
+  .spv-drop { display: none; }
+  .spv-tick { opacity: 1; }
+  .spv-marquee-track { flex-wrap: wrap; width: auto; justify-content: center; }
+  .spv-marquee-track > [aria-hidden] { display: none; }
+}
