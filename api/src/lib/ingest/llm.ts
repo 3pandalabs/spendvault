@@ -56,9 +56,9 @@ const STATEMENT_TOOL = {
       currency: { type: "string", description: "ISO 4217 code, e.g. INR or USD" },
       periodStart: { type: ["string", "null"], description: "YYYY-MM-DD" },
       periodEnd: { type: ["string", "null"], description: "YYYY-MM-DD" },
-      previousBalance: { type: ["number", "null"], description: "Previous / opening balance" },
-      totalDue: { type: ["number", "null"], description: "Credit cards: total amount due" },
-      closingBalance: { type: ["number", "null"], description: "Bank accounts: closing balance" },
+      previousBalance: { type: ["number", "null"], description: "Opening balance: 'Previous balance' on a card statement, 'Beginning/Opening balance' on a bank statement. Copy it exactly; null if not printed." },
+      totalDue: { type: ["number", "null"], description: "Credit cards: the statement 'New balance' / 'Total amount due' (not the minimum due)" },
+      closingBalance: { type: ["number", "null"], description: "Bank accounts: 'Ending/Closing balance' for the period" },
       transactions: {
         type: "array",
         items: {

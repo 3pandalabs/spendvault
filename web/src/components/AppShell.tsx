@@ -4,6 +4,7 @@ import {
   Camera,
   FileUp,
   Inbox,
+  Landmark,
   LayoutDashboard,
   ListOrdered,
   LogOut,
@@ -44,15 +45,16 @@ const MAIN: NavItem[] = [
   { href: "/transactions", label: "Transactions", icon: ListOrdered },
   { href: "/receipts", label: "Receipts", icon: ReceiptText },
   { href: "/documents", label: "Inbox", icon: Inbox, also: ["/share"] },
-  { href: "/alerts", label: "Insights", icon: TrendingUp, also: ["/savings"] },
+  { href: "/alerts", label: "Insights", icon: TrendingUp, also: ["/savings", "/subscriptions", "/budgets"] },
+  { href: "/net-worth", label: "Net worth", icon: Landmark },
 ];
 const ACCOUNT: NavItem[] = [
   { href: "/setup", label: "Setup", icon: Sparkles },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings", label: "Settings", icon: Settings, also: ["/household"] },
 ];
-// Phones: four tabs + More (Inbox, Setup, Settings live in the sheet).
+// Phones: four tabs + More (Inbox, Net worth, Setup, Settings live in the sheet).
 const TABS = [MAIN[0], MAIN[1], MAIN[2], MAIN[4]];
-const MORE = [MAIN[3], ...ACCOUNT];
+const MORE = [MAIN[3], MAIN[5], ...ACCOUNT];
 
 const match = (pathname: string, href: string) => pathname === href || pathname.startsWith(`${href}/`);
 const isActive = (pathname: string, item: NavItem) => [item.href, ...(item.also ?? [])].some((h) => match(pathname, h));

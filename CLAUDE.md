@@ -5,7 +5,7 @@ Expense insights from emailed bank/credit-card statements (3PandaLabs app #7). O
 ## Layout
 - `api/` — Fastify 5 + drizzle + Postgres + Temporal worker (same tree, `Dockerfile.worker`). **`api/ROUTES.md` is the contract: change it first, then code.**
 - `web/` — Next 16 on a Cloudflare Worker (opennext). `next build --webpack`, no proxy.ts/middleware, `.env.production` committed. PWA with Web Share Target (`public/sw.js`).
-  Styles: public home = `app/home.css` (`spv-` prefix); signed-in pages = `app/(app)/app.css` (`spa-` prefix, dark only like home). Nav (`components/AppShell.tsx`): Overview, Transactions, Receipts, Inbox (/documents), Insights (/alerts + /savings), Setup/Settings; money/dates only via `lib/format.ts`.
+  Styles: public home = `app/home.css` (`spv-` prefix); signed-in pages = `app/(app)/app.css` (`spa-` prefix, dark only like home). Nav (`components/AppShell.tsx`): Overview, Transactions, Receipts, Inbox (/documents, statement detail at /documents/detail), Insights (/alerts, /savings, /subscriptions, /budgets), Net worth, Setup/Settings/Household; money/dates only via `lib/format.ts`.
 - `inbound/` — Email Routing Worker for `vault+<token>@in.spendvault.3pandalabs.com`; dumb transport to `POST /internal/inbound-email`.
 - `infra/README.md` — provisioning/deploy runbook.
 
@@ -20,6 +20,9 @@ Expense insights from emailed bank/credit-card statements (3PandaLabs app #7). O
 - Pure modules (`lib/categories`, `lib/institutions`, `lib/ingest/*` parsers, `lib/insights/*` analytics, except the DB-side `insights/load.ts` + `insights/sweep.ts`; `lib/receipts/*` except `receipts/db.ts` + `receipts/process.ts`) must not import env/db, so vitest runs with no infrastructure.
 - Spend totals exclude `superseded_by IS NOT NULL` (alert rows later matched by a statement line) and `NON_SPEND` categories (card bill payments, income, transfers, investments).
 - New sign-up alert (`lib/newUserAlert.ts`, 2026-11-26): `POST /auth/signup` emails "SpendVault New user" (app, email, name, UTC time, user id — never financial data) to `NEW_USER_ALERT_EMAIL` (default 3pandas@3pandalabs.com; `off` disables) through `lib/mailer.ts`. Fire-and-forget, never awaited; 409 conflicts and the SQL demo seed send nothing. Any new user-creating path must decide whether it alerts.
+- Planning (0002, 2026-11-27): subscriptions (`insights/subscriptions.ts` on top of `recurring.ts`), card fees (`insights/fees.ts`), budgets (`insights/budgets.ts`), safe to spend (`insights/safeToSpend.ts`), net worth (`insights/networth.ts`), statement reconciliation (`ingest/reconcile.ts`, opening/closing stored on `documents`). All pure + unit-tested in `test/insights/planning.test.ts`. New alert kinds `new_subscription`, `over_budget` come from `detectSpikes`.
+- Households (`lib/household/*`, `HOUSEHOLD_ENABLED`): members may READ each other's transactions only through `scope=household` on `/dashboard` and `/transactions` (`scopeUserIds`). Every other query stays scoped to the caller; writes on another member's rows stay 404. Joining needs the invited email signed in + an explicit Join.
+- CSV exports (`lib/csv.ts`) neutralize formula cells; keep the "your data is yours" export free.
 - `/metrics` follows the org envelope; keep `metrics/collector.ts` byte-identical across apps. Update the admin flow diagram when routes/auth change.
 
 ## Local dev

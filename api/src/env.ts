@@ -57,6 +57,12 @@ const schema = z.object({
   SMTP_PASS: optional,
   EMAIL_FROM_NAME: z.string().default("SpendVault"),
 
+  // Shared households (couples). On unless set to "false"/"0"/"off".
+  HOUSEHOLD_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => !["false", "0", "off"].includes((v ?? "").trim().toLowerCase())),
+
   GIT_COMMIT: optional,
   SOURCE_COMMIT: optional,
 });

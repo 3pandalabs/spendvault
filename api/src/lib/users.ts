@@ -1,5 +1,6 @@
 import type { users } from "../db/schema.js";
 import { randomToken } from "./crypto.js";
+import { toNum } from "./money.js";
 
 type UserRow = typeof users.$inferSelect;
 
@@ -12,6 +13,7 @@ export function userView(u: UserRow) {
     baseCurrency: u.baseCurrency,
     alertEmails: u.alertEmails,
     deleteOriginals: u.deleteOriginals,
+    monthlyBudget: toNum(u.monthlyBudget),
     createdAt: u.createdAt.toISOString(),
   };
 }

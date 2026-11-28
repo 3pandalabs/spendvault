@@ -83,7 +83,7 @@ export const MERCHANT_RULES: Array<{ match: RegExp; merchant: string; category: 
   { match: /\brent\b|nobroker|housing\.com|cred\s*rent|maintenance|society/, merchant: "Rent/housing", category: "rent" },
   { match: /\bemi\b|loan|bajaj\s*fin|home\s*credit/, merchant: "EMI/loan", category: "emi_loans" },
   {
-    match: /late\s*(payment)?\s*fee|finance\s*charge|interest\s*(charged|debit)?|overlimit|over\s*limit|annual\s*fee|joining\s*fee|membership\s*fee|cash\s*advance\s*fee|forex|cross\s*currency|markup|foreign\s*currency\s*transaction|surcharge|gst\s*on|igst|cgst|sgst|penal|bounce\s*charge|service\s*charge|sms\s*charge|amc\b/,
+    match: /late\s*(payment)?\s*fee|atm\s*(fee|surcharge)|non-?\s*network\s*atm|overdraft\s*(fee|charge)|\bnsf\b|returned\s*payment|foreign\s*(transaction|txn)\s*fee|international\s*(transaction\s*)?fee|(monthly\s*)?(service|maintenance)\s*fee|finance\s*charge|interest\s*(charged|debit)?|overlimit|over\s*limit|annual\s*fee|joining\s*fee|membership\s*fee|cash\s*advance\s*fee|forex|cross\s*currency|markup|foreign\s*currency\s*transaction|surcharge|gst\s*on|igst|cgst|sgst|penal|bounce\s*charge|service\s*charge|sms\s*charge|amc\b/,
     merchant: "Bank fee/charge",
     category: "fees_charges",
   },

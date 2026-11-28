@@ -84,7 +84,7 @@ describe("reconciliation", () => {
   });
   it("null when not computable; extractedDebits always summed", () => {
     const r = reconcile({ accountKind: "credit_card", totalDue: 500, txns: [t(100.1, "debit"), t(0.2, "debit")] });
-    expect(r).toEqual({ statementTotal: 500, extractedDebits: 100.3, extractedCredits: 0, reconciled: null });
+    expect(r).toEqual({ statementTotal: 500, extractedDebits: 100.3, extractedCredits: 0, reconciled: null, openingBalance: null, closingBalance: 500, difference: null });
   });
   it("bank: opening − debits + credits vs closing", () => {
     expect(reconcile({ accountKind: "bank", previousBalance: 100, closingBalance: 150, txns: [t(50, "debit"), t(100, "credit")] })).toMatchObject({ statementTotal: 150, reconciled: true });

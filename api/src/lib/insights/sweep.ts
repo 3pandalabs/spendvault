@@ -6,9 +6,9 @@ import { db } from "../../db/index.js";
 import { alerts, users } from "../../db/schema.js";
 import { env } from "../../env.js";
 import { sendMail } from "../mailer.js";
-import { toDbAmount } from "../money.js";
+import { toDbAmount, toNum } from "../money.js";
 import { buildDigest } from "./digest.js";
-import { loadTxns } from "./load.js";
+import { loadBudgets, loadTxns } from "./load.js";
 import { detectSpikes } from "./spikes.js";
 import { addDays, todayInKolkata } from "./util.js";
 
@@ -19,14 +19,14 @@ const log = (msg: string, fields: Record<string, string | number> = {}) =>
 /** Runs the detector for one user; inserts new alerts (dedupe on key). Returns how many were created. */
 export async function recomputeAlertsForUser(userId: string): Promise<number> {
   const [u] = await db
-    .select({ baseCurrency: users.baseCurrency })
+    .select({ baseCurrency: users.baseCurrency, monthlyBudget: users.monthlyBudget })
     .from(users)
     .where(and(eq(users.id, userId), isNull(users.deletedAt)))
     .limit(1);
   if (!u) return 0;
   const today = todayInKolkata();
-  const txns = await loadTxns(userId, u.baseCurrency, addDays(today, -400));
-  const candidates = detectSpikes({ txns, currency: u.baseCurrency, today });
+  const [txns, budgetRows] = await Promise.all([loadTxns(userId, u.baseCurrency, addDays(today, -400)), loadBudgets(userId)]);
+  const candidates = detectSpikes({ txns, currency: u.baseCurrency, today, budgets: budgetRows, monthlyBudget: toNum(u.monthlyBudget) });
   if (candidates.length === 0) return 0;
   const inserted = await db
     .insert(alerts)

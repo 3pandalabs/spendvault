@@ -39,6 +39,7 @@ export type User = {
   baseCurrency: Currency;
   alertEmails: boolean;
   deleteOriginals: boolean;
+  monthlyBudget: number | null;
   createdAt: string;
 };
 
@@ -49,6 +50,8 @@ export type Me = User & {
   whatsapp: { available: boolean; linkedPhone: string | null; number: string | null };
   setup: { hasDocuments: boolean; hasPasswords: boolean; forwardingConfirmed: boolean };
   llmEnabled: boolean;
+  features?: { household: boolean };
+  household?: { id: string; name: string; memberCount: number } | null;
 };
 
 export type MePatch = {
@@ -56,6 +59,7 @@ export type MePatch = {
   alertEmails?: boolean;
   deleteOriginals?: boolean;
   baseCurrency?: Currency;
+  monthlyBudget?: number | null;
 };
 
 export type ForwardingConfirmation = {
@@ -118,6 +122,11 @@ export type Document = {
   statementTotal: number | null;
   extractedDebits: number | null;
   reconciled: boolean | null;
+  openingBalance?: number | null;
+  closingBalance?: number | null;
+  extractedCredits?: number | null;
+  /** closing − (opening ± what we read). Card: positive = charges we didn't read. */
+  reconcileDifference?: number | null;
   txnCount: number;
   parser: string | null;
   error: string | null;
@@ -138,6 +147,7 @@ export type Account = {
   last4: string;
   label: string | null;
   currency: string;
+  includeInNetWorth?: boolean;
   txnCount: number;
   lastTxnOn: string | null;
 };
@@ -158,6 +168,8 @@ export type Transaction = {
   sourceKind: "statement" | "alert" | "csv";
   categoryLocked: boolean;
   receiptId: string | null;
+  /** Household view only: whose transaction this is. */
+  ownerId?: string;
 };
 
 export type TransactionDetail = Transaction & { receipt: ReceiptDetail | null };
@@ -169,6 +181,9 @@ export type TransactionFilter = {
   accountId?: string;
   q?: string;
   direction?: Direction | "";
+  documentId?: string;
+  scope?: "me" | "household";
+  member?: string;
   limit?: number;
   cursor?: string | null;
 };
@@ -177,7 +192,15 @@ export type CategoryInfo = { key: CategoryKey; label: string; essential: boolean
 
 // ---- alerts ----
 
-export type AlertKind = "category_spike" | "daily_spike" | "large_new_merchant" | "price_hike" | "fee" | "duplicate";
+export type AlertKind =
+  | "category_spike"
+  | "daily_spike"
+  | "large_new_merchant"
+  | "price_hike"
+  | "fee"
+  | "duplicate"
+  | "new_subscription"
+  | "over_budget";
 
 export type Alert = {
   id: string;
@@ -214,11 +237,107 @@ export type Dashboard = {
     pendingExtraction: number;
     itemized: { txnCount: number; amount: number; byCategory: Array<{ category: CategoryKey; label: string; amount: number }> };
   };
+  scope?: "me" | "household";
+  members?: Array<{ userId: string; displayName: string; isMe: boolean }>;
+  safeToSpend?: SafeToSpend | null;
+  budgets?: { count: number; over: number; near: number; top: BudgetLine[] } | null;
+  netWorth?: { netWorth: number; assets: number; liabilities: number; asOf: string | null } | null;
+};
+
+export type SafeToSpend = {
+  month: string;
+  basis: "budget" | "category_budgets" | "income";
+  base: number;
+  spent: number;
+  upcoming: number;
+  upcomingItems: Array<{ merchant: string; amount: number; expectedOn: string }>;
+  amount: number;
+  daysLeft: number;
+  perDay: number;
+};
+
+// ---- subscriptions / budgets / net worth / household ----
+
+export type SubscriptionItem = {
+  merchant: string;
+  category: CategoryKey;
+  cadence: "weekly" | "monthly" | "yearly";
+  amount: number;
+  monthlyAmount: number;
+  annualCost: number;
+  firstChargedOn: string;
+  lastChargedOn: string;
+  nextExpectedOn: string;
+  occurrences: number;
+  priceChanged: boolean;
+  previousAmount: number | null;
+  isNew: boolean;
+};
+
+export type Subscriptions = { currency: Currency; monthlyTotal: number; yearlyTotal: number; items: SubscriptionItem[] };
+
+export type BudgetLine = {
+  category: CategoryKey;
+  label: string;
+  budget: number;
+  spent: number;
+  remaining: number;
+  progress: number;
+  status: "ok" | "near" | "over";
+};
+
+export type Budgets = {
+  month: string;
+  currency: Currency;
+  monthlyBudget: number | null;
+  totals: { budgeted: number; spent: number; spentInBudgeted: number };
+  items: BudgetLine[];
+  suggestions: Array<{ category: CategoryKey; label: string; suggested: number; average: number }>;
+};
+
+export type NetWorthItemType = "cash" | "investment" | "retirement" | "property" | "vehicle" | "loan" | "mortgage" | "credit_card" | "other";
+export type NetWorthItem = { id: string; kind: "asset" | "liability"; type: NetWorthItemType; name: string; amount: number; updatedAt: string };
+
+export type NetWorth = {
+  currency: Currency;
+  netWorth: number;
+  assets: number;
+  liabilities: number;
+  hasData: boolean;
+  asOf: string | null;
+  accounts: Array<{
+    accountId: string;
+    label: string;
+    kind: string;
+    currency: string;
+    includeInNetWorth: boolean;
+    balance: number | null;
+    asOf: string | null;
+    side: "asset" | "liability" | null;
+    counted: boolean;
+  }>;
+  items: NetWorthItem[];
+};
+
+export type Household = {
+  id: string;
+  name: string;
+  role: "owner" | "member";
+  members: Array<{ userId: string; displayName: string; email: string; role: string; joinedAt: string; isMe: boolean }>;
+  invites: Array<{ id: string; email: string; expiresAt: string; createdAt: string }>;
+};
+
+export type InvitePreview = {
+  valid: boolean;
+  code: null | "invalid_or_expired_token" | "wrong_account" | "already_in_household";
+  householdName?: string;
+  invitedBy?: string | null;
+  email?: string;
 };
 
 // ---- savings ----
 
-export type FeeType = "late_fee" | "interest" | "forex" | "annual_fee" | "cash_advance" | "gst_on_fees" | "other";
+export type FeeType = "late_fee" | "interest" | "forex" | "annual_fee" | "cash_advance" | "atm_fee" | "overlimit" | "overdraft" | "gst_on_fees" | "other";
 
 export type Subscription = {
   merchant: string;

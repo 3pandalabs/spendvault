@@ -1,10 +1,10 @@
 "use client";
 
-import { ArrowRight, Bell, Camera, Inbox, Mail, ReceiptText, RefreshCw, ScanLine, Sparkles } from "lucide-react";
+import { ArrowRight, Bell, Camera, Gauge, Inbox, Landmark, Mail, ReceiptText, RefreshCw, ScanLine, Sparkles, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { delay, Eyebrow, ReceiptPill } from "@/components/app-ui";
+import { delay, Eyebrow, InfoTip, ProgressBar, ReceiptPill } from "@/components/app-ui";
 import { AlertIcon } from "@/components/bits";
 import { BarChart, Delta, HBarList, ShareStrip } from "@/components/charts";
 import { EmptyState, LoadError, PageHeader, Panel, PanelTitle, Skeleton, selectClass } from "@/components/common";
@@ -26,7 +26,13 @@ const MISSING_RECEIPT_MIN: Record<string, number> = { USD: 20, INR: 1000 };
 export default function DashboardPage() {
   const { me } = useSession();
   const [month, setMonth] = useState<string | undefined>(undefined);
-  const dash = useAsync(() => getDashboard(month), `dash:${month ?? ""}`);
+  const inHousehold = Boolean(me.features?.household && me.household);
+  // "all" = everyone in the household, a user id = one member, "me" = personal view.
+  const [view, setView] = useState<string>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "household" ? "all" : "me",
+  );
+  const scope = inHousehold && view !== "me" ? { scope: "household" as const, member: view === "all" ? undefined : view } : undefined;
+  const dash = useAsync(() => getDashboard(month, scope), `dash:${month ?? ""}:${scope ? view : "me"}`);
   const d = dash.data;
   const first = me.displayName?.trim().split(/\s+/)[0];
 
@@ -37,15 +43,30 @@ export default function DashboardPage() {
         title={first ? `Hi ${first}` : "Overview"}
         subtitle={d ? `${fmtMonth(d.month)} across every card and account` : "Your spending across every card and account"}
         actions={
-          d && d.availableMonths.length > 0 ? (
-            <select aria-label="Month" className={`${selectClass} w-48`} value={d.month} onChange={(e) => setMonth(e.target.value)}>
-              {(d.availableMonths.includes(d.month) ? d.availableMonths : [d.month, ...d.availableMonths]).map((m) => (
-                <option key={m} value={m}>
-                  {fmtMonth(m)}
-                </option>
-              ))}
-            </select>
-          ) : null
+          <div className="flex flex-wrap gap-2">
+            {inHousehold ? (
+              <select aria-label="Whose spending" className={`${selectClass} w-44`} value={view} onChange={(e) => setView(e.target.value)}>
+                <option value="me">Just me</option>
+                <option value="all">Household</option>
+                {(d?.members ?? [])
+                  .filter((m) => !m.isMe)
+                  .map((m) => (
+                    <option key={m.userId} value={m.userId}>
+                      {m.displayName}
+                    </option>
+                  ))}
+              </select>
+            ) : null}
+            {d && d.availableMonths.length > 0 ? (
+              <select aria-label="Month" className={`${selectClass} w-48`} value={d.month} onChange={(e) => setMonth(e.target.value)}>
+                {(d.availableMonths.includes(d.month) ? d.availableMonths : [d.month, ...d.availableMonths]).map((m) => (
+                  <option key={m} value={m}>
+                    {fmtMonth(m)}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+          </div>
         }
       />
       {dash.error ? (
@@ -190,6 +211,15 @@ function DashboardBody({ d, reload }: { d: Dashboard; reload: () => void }) {
         </div>
       </section>
 
+      {/* Planning: safe to spend, budgets, net worth (own view only) */}
+      {d.scope === "household" ? (
+        <p className="spa-in rounded-xl border border-sky-400/30 bg-sky-400/10 px-4 py-2.5 text-sm text-sky-100">
+          Household view: spending from {d.members?.length ?? 0} people combined. Budgets, net worth and alerts stay personal.
+        </p>
+      ) : (
+        <PlanningRow d={d} />
+      )}
+
       {/* Prompts: things to do now */}
       <Prompts d={d} missing={missing} />
 
@@ -317,6 +347,108 @@ function DashboardBody({ d, reload }: { d: Dashboard; reload: () => void }) {
           />
         )}
       </Panel>
+    </div>
+  );
+}
+
+function PlanningRow({ d }: { d: Dashboard }) {
+  const { me } = useSession();
+  const [thisMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const cur = d.currency;
+  const s = d.safeToSpend;
+  const b = d.budgets;
+  const n = d.netWorth;
+  return (
+    <div className="grid gap-3 md:grid-cols-3">
+      {/* Safe to spend */}
+      <div className="spa-tile spa-in rounded-2xl p-4" style={delay(0.04)}>
+        <div className="flex items-start justify-between gap-2">
+          <p className="inline-flex items-center gap-1.5 text-sm font-medium">
+            <Wallet className="size-4 text-emerald-300" aria-hidden /> Safe to spend
+          </p>
+          <InfoTip label="How safe to spend is worked out">
+            {s ? (
+              <>
+                {s.basis === "budget" ? "Your monthly budget" : s.basis === "category_budgets" ? "Your category budgets added up" : "Your average monthly income (last 3 months)"} (
+                {money(s.base, cur)}) minus what you&apos;ve spent this month ({money(s.spent, cur)}) minus subscriptions and bills still expected this
+                month ({money(s.upcoming, cur)}). Card payments and transfers never count as spending.
+              </>
+            ) : (
+              <>Your monthly budget (or average income) minus this month&apos;s spending minus subscriptions and bills still expected this month. Set a budget to see it.</>
+            )}
+          </InfoTip>
+        </div>
+        {s ? (
+          <>
+            <p className={cn("spa-display mt-1 text-3xl font-extrabold tabular", s.amount < 0 ? "text-red-300" : "text-emerald-200")}>{money(s.amount, cur)}</p>
+            <p className="mt-0.5 text-xs text-fg-muted">
+              {s.amount < 0
+                ? `Over by ${money(-s.amount, cur)} this month`
+                : `${money(s.perDay, cur)} a day for the next ${s.daysLeft} day${s.daysLeft === 1 ? "" : "s"}`}
+              {s.upcomingItems.length ? ` · ${money(s.upcoming, cur)} still to come` : ""}
+            </p>
+          </>
+        ) : d.month !== thisMonth && (me.monthlyBudget || b?.count) ? (
+          <p className="mt-2 text-sm text-fg-muted">Shown for the current month. Pick it above to see what&apos;s left.</p>
+        ) : (
+          <p className="mt-2 text-sm text-fg-muted">
+            <Link href="/budgets" className="text-accent-strong hover:underline">
+              Set a monthly budget
+            </Link>{" "}
+            to see what&apos;s left to spend this month.
+          </p>
+        )}
+      </div>
+
+      {/* Budgets */}
+      <Link href="/budgets" className="spa-tile spa-in block rounded-2xl p-4" style={delay(0.08)}>
+        <p className="inline-flex items-center gap-1.5 text-sm font-medium">
+          <Gauge className="size-4 text-amber-300" aria-hidden /> Budgets
+        </p>
+        {b && b.count > 0 ? (
+          <>
+            <p className="mt-1 text-sm">
+              {b.over ? <span className="font-semibold text-red-300">{b.over} over</span> : <span className="font-semibold text-emerald-200">On track</span>}
+              {b.near ? <span className="text-amber-200"> · {b.near} near</span> : null}
+              <span className="text-fg-muted"> · {b.count} set</span>
+            </p>
+            <ul className="mt-2 space-y-2">
+              {b.top.map((l) => (
+                <li key={l.category}>
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate">{l.label}</span>
+                    <span className="shrink-0 tabular text-fg-muted">
+                      {money(l.spent, cur)} / {money(l.budget, cur)}
+                    </span>
+                  </div>
+                  <div className="mt-1">
+                    <ProgressBar value={l.progress} status={l.status} label={`${l.label} budget used`} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-fg-muted">Set category budgets, with suggestions from your last 3 months.</p>
+        )}
+      </Link>
+
+      {/* Net worth */}
+      <Link href="/net-worth" className="spa-tile spa-in block rounded-2xl p-4" style={delay(0.12)}>
+        <p className="inline-flex items-center gap-1.5 text-sm font-medium">
+          <Landmark className="size-4 text-violet-300" aria-hidden /> Net worth
+        </p>
+        {n ? (
+          <>
+            <p className={cn("spa-display mt-1 text-3xl font-extrabold tabular", n.netWorth < 0 && "text-red-300")}>{money(n.netWorth, cur)}</p>
+            <p className="mt-0.5 text-xs text-fg-muted">
+              {money(n.assets, cur)} assets · {money(n.liabilities, cur)} owed
+            </p>
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-fg-muted">Add savings, investments and loans to see what you&apos;re worth.</p>
+        )}
+      </Link>
     </div>
   );
 }

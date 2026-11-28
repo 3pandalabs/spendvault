@@ -94,7 +94,13 @@ function SavingsBody({ s }: { s: Savings }) {
       ) : null}
 
       <Panel>
-        <PanelTitle aside={subsAnnual ? <span className="text-sm text-fg-muted">{money(subsAnnual, cur)} / year</span> : null}>
+        <PanelTitle
+          aside={
+            <Link href="/subscriptions" className="text-sm text-accent-strong hover:underline">
+              {subsAnnual ? `${money(subsAnnual, cur)} / year · ` : ""}Details
+            </Link>
+          }
+        >
           <span className="inline-flex items-center gap-2">
             <Repeat className="size-4" /> Subscriptions
           </span>

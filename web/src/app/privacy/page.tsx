@@ -74,7 +74,20 @@ export default function PrivacyPage() {
         <H3>Extracted transactions</H3>
         <p>
           From those documents we extract transaction date, description, merchant, amount, debit or credit, the card or account it belongs to
-          (bank name and last 4 digits only), and statement totals. We assign each transaction a category, which you can change.
+          (bank name and last 4 digits only), and statement totals and balances (opening and closing balance, used to check that every line
+          was read and for net worth). We assign each transaction a category, which you can change.
+        </p>
+        <H3>Budgets and net worth (only if you add them)</H3>
+        <p>
+          Monthly budgets you set, and the assets and debts you type in for net worth (a name, a type and an amount). Nothing is linked to your
+          bank: these are exactly what you enter.
+        </p>
+        <H3>Shared household (only if you use it)</H3>
+        <p>
+          If you invite someone, we store their email address and a one-time invite link (kept as a hash) for 7 days, and email them the
+          invite. Once they choose to join, the members of a household can see each other&apos;s transactions (date, merchant, category,
+          amount, account) in combined views. Statements, receipts, alerts, budgets, net worth and settings are never shared. Anyone can leave
+          at any time and sharing stops immediately.
         </p>
         <H3>PDF passwords</H3>
         <p>Passwords you save so we can open locked statement PDFs, stored encrypted, as described in section 6.</p>
@@ -149,7 +162,10 @@ export default function PrivacyPage() {
         <UL>
           <li>All traffic uses HTTPS.</li>
           <li>PDF passwords and stored original documents, including receipt images, are encrypted with AES-256-GCM before they&apos;re written to disk.</li>
-          <li>Every request is checked against your account. Nobody else&apos;s account can reach your data.</li>
+          <li>
+            Every request is checked against your account. Nobody else&apos;s account can reach your data, except household members you chose
+            to share transactions with.
+          </li>
           <li>Access to production systems is limited to the 3PandaLabs team and protected by multi-factor access controls.</li>
         </UL>
         <p>No system is perfectly secure. If a breach affects your data, we&apos;ll notify you and the authorities as the law requires.</p>
@@ -185,8 +201,8 @@ export default function PrivacyPage() {
         <p>Wherever you live, you can:</p>
         <UL>
           <li>
-            <strong>Export</strong> every transaction, account, alert and receipt (with its line items) from <A href="/settings">Settings</A> as
-            a JSON file.
+            <strong>Export</strong> your transactions and receipt line items as CSV files, or every transaction, account, alert and receipt
+            (with its line items) as a JSON file, from <A href="/settings">Settings</A>.
           </li>
           <li>
             <strong>Correct</strong> any transaction&apos;s or receipt item&apos;s category, fix a receipt&apos;s details or its match, and delete
