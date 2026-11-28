@@ -97,8 +97,8 @@ export type Institution = {
 // ---- documents ----
 
 export type DocumentSource = "email" | "upload" | "share" | "whatsapp";
-export type DocumentKind = "statement" | "alert" | "unknown";
-export type DocumentStatus = "received" | "processing" | "parsed" | "needs_password" | "failed" | "ignored";
+export type DocumentKind = "statement" | "alert" | "receipt" | "unknown";
+export type DocumentStatus = "received" | "processing" | "parsed" | "needs_password" | "failed" | "ignored" | "pending_extraction";
 
 export type Document = {
   id: string;
@@ -157,7 +157,10 @@ export type Transaction = {
   currency: string;
   sourceKind: "statement" | "alert" | "csv";
   categoryLocked: boolean;
+  receiptId: string | null;
 };
+
+export type TransactionDetail = Transaction & { receipt: ReceiptDetail | null };
 
 export type TransactionFilter = {
   from?: string;
@@ -203,6 +206,14 @@ export type Dashboard = {
   daily: Array<{ date: string; amount: number }>;
   trend: Array<{ month: string; spend: number }>;
   recentAlerts: Alert[];
+  /** All-time receipt counts + this month's receipt-backed spend by item category (absent on an older API). */
+  receipts?: {
+    total: number;
+    matched: number;
+    unmatched: number;
+    pendingExtraction: number;
+    itemized: { txnCount: number; amount: number; byCategory: Array<{ category: CategoryKey; label: string; amount: number }> };
+  };
 };
 
 // ---- savings ----
@@ -238,4 +249,52 @@ export type Savings = {
 
 export type WhatsappLink = { code: string; expiresAt: string; number: string | null };
 
-export type ExportData = { transactions: Transaction[]; accounts: Account[]; alerts: Alert[] };
+export type ExportData = { transactions: Transaction[]; accounts: Account[]; alerts: Alert[]; receipts: Array<Receipt & { items: ReceiptItem[] }> };
+
+// ---- receipts ----
+
+export type ReceiptStatus = "processing" | "pending_extraction" | "extracted" | "manual" | "failed";
+export type ReceiptMatchStatus = "unmatched" | "auto" | "confirmed";
+
+export type Receipt = {
+  id: string;
+  documentId: string;
+  status: ReceiptStatus;
+  merchant: string | null;
+  purchasedOn: string | null;
+  total: number | null;
+  tax: number | null;
+  currency: string;
+  itemCount: number;
+  itemsReconciled: boolean | null;
+  parser: string | null;
+  error: string | null;
+  source: DocumentSource;
+  filename: string | null;
+  mimeType: string;
+  hasImage: boolean;
+  transactionId: string | null;
+  matchStatus: ReceiptMatchStatus;
+  matchedAt: string | null;
+  createdAt: string;
+};
+
+export type ReceiptItem = {
+  id: string;
+  name: string;
+  quantity: number | null;
+  unitPrice: number | null;
+  lineTotal: number;
+  category: CategoryKey;
+  categoryLocked: boolean;
+};
+
+export type ReceiptDetail = Receipt & { items: ReceiptItem[]; transaction: Transaction | null };
+
+export type ReceiptPatch = {
+  merchant?: string | null;
+  purchasedOn?: string | null;
+  total?: number;
+  tax?: number | null;
+  currency?: Currency;
+};

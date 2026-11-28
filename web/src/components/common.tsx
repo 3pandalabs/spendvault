@@ -8,19 +8,23 @@ import { Button } from "./ui/button";
 import { fieldBase } from "./ui/input";
 
 export function PageHeader({
+  eyebrow,
   title,
   subtitle,
   actions,
 }: {
+  /** Small mono label above the title (the nav section), as on the home page. */
+  eyebrow?: React.ReactNode;
   title: React.ReactNode;
   subtitle?: React.ReactNode;
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+    <div className="spa-in mb-5 flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="text-2xl font-semibold tracking-tight text-fg">{title}</h1>
-        {subtitle ? <p className="mt-1 text-sm text-fg-muted">{subtitle}</p> : null}
+        {eyebrow ? <p className="mb-1.5 font-mono text-[11px] tracking-[0.2em] text-amber-300/80 uppercase">{eyebrow}</p> : null}
+        <h1 className="spa-display text-2xl font-bold text-fg sm:text-[1.75rem]">{title}</h1>
+        {subtitle ? <p className="mt-1 max-w-2xl text-sm text-fg-muted">{subtitle}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
@@ -77,7 +81,7 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-6 py-10 text-center backdrop-blur-sm">
+    <div className="flex flex-col items-center rounded-2xl border border-dashed border-white/15 bg-white/[0.03] px-6 py-10 text-center backdrop-blur-sm">
       {icon ? <div className="mb-3 text-amber-300/80 [&_svg]:size-8">{icon}</div> : null}
       <p className="font-medium text-fg">{title}</p>
       {body ? <p className="mt-1 max-w-md text-sm text-fg-muted">{body}</p> : null}
@@ -87,7 +91,7 @@ export function EmptyState({
 }
 
 export function Panel({ className, ...props }: React.HTMLAttributes<HTMLElement>) {
-  return <section className={cn("min-w-0 rounded-xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-sm sm:p-5", className)} {...props} />;
+  return <section className={cn("spa-tile min-w-0 rounded-2xl p-4 sm:p-5", className)} {...props} />;
 }
 
 export function PanelTitle({ children, aside }: { children: React.ReactNode; aside?: React.ReactNode }) {

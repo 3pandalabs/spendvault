@@ -1,0 +1,132 @@
+/* Signed-in app only (imported by app/(app)/layout.tsx). Everything is
+   prefixed `spa-` so it can't collide with the public home page's `spv-`
+   rules or leak into the auth pages. Same palette, type and motion language
+   as home.css: amber-to-emerald accents, glass tiles over the shared
+   backdrop, short ease-out entrances. Motion is decoration only: every
+   animation is off under prefers-reduced-motion (bottom of file) and the
+   static end state is what you see then.
+
+   Dark only, like the home page and globals.css (the org's AdVault chrome
+   ships no light theme). */
+
+.spa-display {
+  letter-spacing: -0.03em;
+}
+
+/* Amber-to-emerald accent text (money in, money saved). */
+.spa-shimmer {
+  background: linear-gradient(100deg, #fbbf24 0%, #fb923c 30%, #34d399 62%, #fbbf24 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: spa-shimmer 8s ease-in-out infinite;
+}
+@keyframes spa-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Entrance: fade up, staggered with style={{ "--d": "0.1s" }}. */
+.spa-in { opacity: 0; animation: spa-in .5s ease-out forwards; animation-delay: var(--d, 0s); }
+@keyframes spa-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Bars grow in from the left. */
+.spa-grow { transform-origin: left; transform: scaleX(0); animation: spa-grow .9s cubic-bezier(.2,.8,.2,1) forwards; animation-delay: var(--d, .15s); }
+@keyframes spa-grow { to { transform: scaleX(1); } }
+
+/* Glass tile with the home page's hover lift. In the components layer so a
+   page's Tailwind border/bg utilities (e.g. a red danger panel) still win. */
+@layer components {
+  .spa-tile {
+    border: 1px solid rgb(255 255 255 / .1);
+    background: rgb(255 255 255 / .03);
+    backdrop-filter: blur(4px);
+    transition: transform .25s ease, border-color .25s ease, background-color .25s ease;
+  }
+  a.spa-tile:hover, button.spa-tile:hover, .spa-tile[data-hover]:hover {
+    transform: translateY(-2px);
+    border-color: rgb(251 191 36 / .35);
+    background: rgb(255 255 255 / .05);
+  }
+
+  /* The headline panel: amber glow from the top, emerald from the corner. */
+  .spa-glow {
+    background:
+      radial-gradient(70% 90% at 15% 0%, rgb(251 191 36 / .18), transparent 70%),
+      radial-gradient(50% 70% at 100% 100%, rgb(52 211 153 / .12), transparent 70%),
+      rgb(255 255 255 / .03);
+  }
+}
+
+/* Rotating conic border: reserved for the receipts / item-level panel. */
+@property --spa-angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+.spa-ring {
+  border-radius: 1rem; padding: 1px;
+  background: conic-gradient(from var(--spa-angle), rgb(251 191 36 / .55), rgb(52 211 153 / .3), rgb(167 139 250 / .35), rgb(251 191 36 / .55));
+  animation: spa-spin 12s linear infinite;
+}
+.spa-ring > * { border-radius: calc(1rem - 1px); }
+@keyframes spa-spin { to { --spa-angle: 360deg; } }
+
+/* Live dot (something is being read). */
+.spa-live { animation: spa-live 1.4s ease-in-out infinite; }
+@keyframes spa-live { 50% { opacity: .25; } }
+
+/* Alert attention ring. */
+.spa-alert { animation: spa-ring 3s ease-in-out 1s infinite; }
+@keyframes spa-ring {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(248 113 113 / 0); }
+  40% { box-shadow: 0 0 0 5px rgb(248 113 113 / .12); }
+}
+
+/* Primary button shine (same as the home CTA). */
+.spa-shine { position: relative; overflow: hidden; }
+.spa-shine::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(110deg, transparent 35%, rgb(255 255 255 / .45) 50%, transparent 65%);
+  transform: translateX(-120%);
+  animation: spa-shine 5s ease-in-out infinite;
+}
+@keyframes spa-shine { 0%, 65% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+
+/* Sidebar / tab bar active marker. */
+.spa-nav-link { position: relative; }
+.spa-nav-link[aria-current="page"]::before {
+  content: ""; position: absolute; left: -0.75rem; top: 22%; bottom: 22%; width: 3px; border-radius: 3px;
+  background: linear-gradient(180deg, #fbbf24, #34d399);
+}
+.spa-tab[aria-current="page"] .spa-tab-dot { opacity: 1; transform: scaleX(1); }
+.spa-tab-dot { opacity: 0; transform: scaleX(.3); transition: opacity .2s ease, transform .2s ease; }
+
+/* Bottom sheets slide up. */
+.spa-sheet { animation: spa-sheet .22s cubic-bezier(.2,.8,.2,1); }
+@keyframes spa-sheet { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+.spa-fade { animation: spa-fade .18s ease-out; }
+@keyframes spa-fade { from { opacity: 0; } to { opacity: 1; } }
+
+@layer components {
+  /* Upload zone while a file is dragged over it. */
+  .spa-drop[data-drag] {
+    border-color: rgb(251 191 36 / .6);
+    background: rgb(251 191 36 / .08);
+  }
+}
+
+/* Room for the fixed mobile tab bar plus the iOS home indicator. */
+.spa-main { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
+@media (min-width: 1024px) {
+  .spa-main { padding-bottom: 3rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spa-shimmer, .spa-ring, .spa-live, .spa-alert, .spa-shine::after { animation: none !important; }
+  .spa-in { animation: none; opacity: 1; }
+  .spa-grow { animation: none; transform: none; }
+  .spa-sheet, .spa-fade { animation: none; }
+  .spa-tile { transition: none; }
+  a.spa-tile:hover, button.spa-tile:hover, .spa-tile[data-hover]:hover { transform: none; }
+}

@@ -10,7 +10,7 @@ import { ErrorText, Spinner } from "./common";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
-export const ACCEPT = ".pdf,.csv,.xlsx,.xls,.txt,.eml,application/pdf,text/csv";
+export const ACCEPT = ".pdf,.csv,.xlsx,.xls,.txt,.eml,.jpg,.jpeg,.png,.webp,application/pdf,text/csv,image/jpeg,image/png,image/webp";
 const MAX_FILES = 10;
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -58,7 +58,7 @@ export function UploadZone({ onUploaded }: { onUploaded: (docs: Document[]) => v
   }
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-sm">
+    <div className="spa-tile rounded-2xl p-4">
       <div
         role="button"
         tabIndex={0}
@@ -82,7 +82,7 @@ export function UploadZone({ onUploaded }: { onUploaded: (docs: Document[]) => v
       >
         <FileUp className="size-7 text-amber-300" aria-hidden />
         <p className="mt-2 font-medium">Drop statements here, or tap to choose</p>
-        <p className="mt-1 text-xs text-fg-muted">PDF, CSV or Excel · up to 10 files · 10 MB each</p>
+        <p className="mt-1 text-xs text-fg-muted">PDF, CSV or Excel statements, or receipt photos · up to 10 files · 10 MB each</p>
         <input ref={input} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => (add(e.target.files), (e.target.value = ""))} />
       </div>
 

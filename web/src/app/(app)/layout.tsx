@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/AppShell";
+import "./app.css";
 
 // Every signed-in surface is noindex. robots.txt also disallows these paths,
 // but the meta tag is the signal that actually keeps a linked URL out.

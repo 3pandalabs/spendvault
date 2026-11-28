@@ -4,6 +4,7 @@ import { ListOrdered, Lock, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import { ReceiptPill } from "@/components/app-ui";
 import { CategoryChip } from "@/components/bits";
 import { EmptyState, ErrorText, LoadError, Loading, PageHeader, Spinner, selectClass } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -93,10 +94,14 @@ function Transactions() {
 
   return (
     <>
-      <PageHeader title="Transactions" subtitle="Every line from your statements and alerts. Fix a category and we'll remember it." />
+      <PageHeader
+        eyebrow="Transactions"
+        title="Every charge, every card"
+        subtitle="Every line from your statements and purchase alerts. Fix a category and we'll remember it. Charges with a receipt show what was bought."
+      />
 
       {/* Filters */}
-      <div className="mb-4 space-y-3 rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-3 sm:p-4">
+      <div className="spa-tile spa-in mb-4 space-y-3 rounded-2xl p-3 sm:p-4">
         <SearchBox initial={filter.q ?? ""} onSearch={(q) => setFilter({ q: q || undefined })} key={filter.q ?? ""} />
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           <select
@@ -197,7 +202,7 @@ function Transactions() {
         />
       ) : (
         <>
-          <div className={cn("overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm", first.loading && "opacity-60")}>
+          <div className={cn("spa-tile overflow-hidden rounded-2xl", first.loading && "opacity-60")}>
             <div className="hidden grid-cols-[7rem_minmax(0,1fr)_14rem_8rem] gap-3 border-b border-line bg-bg-subtle px-4 py-2 text-xs font-medium text-fg-muted md:grid">
               <span>Date</span>
               <span>Merchant</span>
@@ -215,7 +220,7 @@ function Transactions() {
                       setEdited({});
                       setMore(null);
                       first.reload();
-                    } else setEdited((e) => ({ ...e, [u.id]: u }));
+                    } else setEdited((e) => ({ ...e, [u.id]: { ...u, receiptId: t.receiptId } }));
                   }}
                 />
               ))}
@@ -306,8 +311,15 @@ function TxnRow({
       <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 md:grid-cols-[7rem_minmax(0,1fr)_14rem_8rem] md:items-center">
         <span className="order-3 text-xs text-fg-muted md:order-none md:text-sm md:text-fg">{fmtDate(t.postedOn)}</span>
         <div className="order-1 min-w-0 md:order-none">
-          <p className="truncate text-sm font-medium" title={t.descriptionRaw}>
-            {t.merchant}
+          <p className="flex min-w-0 items-center gap-1.5 text-sm font-medium" title={t.descriptionRaw}>
+            <Link href={`/transactions/detail?id=${t.id}`} className="truncate hover:underline">
+              {t.merchant}
+            </Link>
+            {t.receiptId ? (
+              <Link href={`/transactions/detail?id=${t.id}`} aria-label={`${t.merchant}: receipt matched, see items`}>
+                <ReceiptPill />
+              </Link>
+            ) : null}
           </p>
           <p className="truncate text-xs text-fg-muted" title={t.descriptionRaw}>
             {account ? `${accountName(account)} · ` : ""}

@@ -5,7 +5,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { and, eq, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "../../db/index.js";
-import { accounts, categoryRules, documents, pdfPasswords, transactions, users } from "../../db/schema.js";
+import { accounts, categoryRules, documents, pdfPasswords, receipts, transactions, users } from "../../db/schema.js";
 import { env } from "../../env.js";
 import { categorize, isCategory, type Category } from "../categories.js";
 import { decrypt, decryptString, encrypt } from "../crypto.js";
@@ -14,6 +14,9 @@ import { institutionByKey, institutionFromText, type Institution } from "../inst
 import { toDbAmount } from "../money.js";
 import { replySafely } from "../whatsapp.js";
 import { recomputeAlertsForUser } from "../insights/sweep.js";
+import { rematchReceiptsForUser } from "../receipts/db.js";
+import { looksLikeReceipt } from "../receipts/detect.js";
+import { processReceipt } from "../receipts/process.js";
 import { looksLikeAlert, parseAlertText } from "./alert.js";
 import { fileTypeOf } from "./classify.js";
 import { categorizeWithLlm, extractStatementWithLlm, type LlmClient } from "./llm.js";
@@ -75,7 +78,9 @@ async function fromStatementText(pages: string[], inst: Institution | undefined,
   return rules;
 }
 
-type Extracted = { result: ParseResult; inst: Institution | undefined; usedPassword: Candidate | null };
+// `text`: the readable text (PDF/plain), kept so a zero-transaction statement
+// that turns out to be a receipt/invoice can be rerouted without re-reading.
+type Extracted = { result: ParseResult; inst: Institution | undefined; usedPassword: Candidate | null; text?: string };
 
 async function extract(doc: DocRow, buf: Buffer, opts: ProcessOptions, homeCountry: "IN" | "US"): Promise<Extracted> {
   let inst = institutionByKey(doc.institution);
@@ -88,7 +93,7 @@ async function extract(doc: DocRow, buf: Buffer, opts: ProcessOptions, homeCount
       if (!pdf.ok) throw new NeedsPassword();
       inst ??= institutionFromText(pdf.pages[0]?.slice(0, 3000));
       const result = await fromStatementText(pdf.pages, inst, homeCountry);
-      return { result, inst, usedPassword: pdf.passwordIndex === null ? null : candidates[pdf.passwordIndex] };
+      return { result, inst, usedPassword: pdf.passwordIndex === null ? null : candidates[pdf.passwordIndex], text: pdf.pages.join("\n") };
     }
     case "csv":
       return { result: parseCsvBuffer(buf, table()), inst, usedPassword: null };
@@ -113,7 +118,7 @@ async function extract(doc: DocRow, buf: Buffer, opts: ProcessOptions, homeCount
         }
         return { result, inst, usedPassword: null };
       }
-      return { result: await fromStatementText([text], inst, homeCountry), inst, usedPassword: null };
+      return { result: await fromStatementText([text], inst, homeCountry), inst, usedPassword: null, text };
     }
     case "image": {
       const client = llm();
@@ -310,7 +315,37 @@ export async function processDocument(documentId: string, opts: ProcessOptions =
   await db.update(documents).set({ status: "processing", error: null }).where(eq(documents.id, doc.id));
   try {
     const buf = decrypt(doc.contentEnc, env.DATA_KEY);
+    const type = fileTypeOf(doc.mimeType, doc.filename, buf.subarray(0, 8));
+
+    // Receipts (photos, e-receipts, invoices the ingest step recognised).
+    if (doc.kind === "receipt" && type) {
+      let text: string | undefined;
+      let readable = true;
+      if (type === "pdf") {
+        const pdf = await extractPdfText(buf, []);
+        if (pdf.ok) text = pdf.pages.join("\n");
+        else readable = false; // a locked PDF is a statement, not a receipt
+      }
+      if (readable && (await processReceipt(doc, buf, user, llm(), env.ANTHROPIC_MODEL, { type, text })) === "done") {
+        return notifyWhatsApp(doc.id, "Receipt saved. See it in SpendVault > Receipts.");
+      }
+      if (doc.kind === "receipt") {
+        // Not a receipt after all (e.g. a locked PDF): drop the placeholder receipt row.
+        await db.delete(receipts).where(and(eq(receipts.documentId, doc.id), eq(receipts.userId, doc.userId)));
+        await db.update(documents).set({ kind: "statement" }).where(eq(documents.id, doc.id));
+        doc.kind = "statement";
+      }
+    }
+
     const ex = await extract(doc, buf, opts, homeCountryOf(user.baseCurrency));
+
+    // A "statement" with no transactions whose text reads like an invoice/e-bill.
+    if (!ex.result.txns.length && doc.kind !== "alert" && type && ex.text && looksLikeReceipt(ex.text)) {
+      doc.kind = "receipt";
+      if ((await processReceipt(doc, buf, user, llm(), env.ANTHROPIC_MODEL, { type, text: ex.text })) === "done") {
+        return notifyWhatsApp(doc.id, "Receipt saved. See it in SpendVault > Receipts.");
+      }
+    }
 
     if (ex.usedPassword?.savedId) {
       await db.update(pdfPasswords).set({ lastUsedAt: new Date() }).where(and(eq(pdfPasswords.id, ex.usedPassword.savedId), eq(pdfPasswords.userId, doc.userId)));
@@ -332,6 +367,12 @@ export async function processDocument(documentId: string, opts: ProcessOptions =
         await recomputeAlertsForUser(doc.userId);
       } catch (err) {
         ingestLog.warn({ userId: doc.userId, err: errKind(err) }, "alert recompute failed");
+      }
+      // New statement lines may be what a waiting receipt was paid with.
+      try {
+        await rematchReceiptsForUser(doc.userId);
+      } catch (err) {
+        ingestLog.warn({ userId: doc.userId, err: errKind(err) }, "receipt rematch failed");
       }
       const name = institutionByKey(out.institution)?.name ?? "your statement";
       const period = formatPeriod(ex.result.periodStart ?? null, ex.result.periodEnd ?? null);

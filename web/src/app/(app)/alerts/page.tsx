@@ -2,6 +2,7 @@
 
 import { BellOff, RefreshCw, X } from "lucide-react";
 import { useState } from "react";
+import { delay, INSIGHT_TABS, SubTabs } from "@/components/app-ui";
 import { AlertIcon, ALERT_ICON } from "@/components/bits";
 import { EmptyState, ErrorText, LoadError, Loading, PageHeader, Spinner } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -58,14 +59,16 @@ export default function AlertsPage() {
   return (
     <>
       <PageHeader
+        eyebrow="Insights"
         title="Alerts"
-        subtitle="Spending spikes, new fees, price hikes and possible double charges."
+        subtitle="Spending spikes, new fees, price hikes and possible double charges. Purchase alerts from your bank make these near real time."
         actions={
           <Button variant="outline" onClick={checkNow} disabled={checking}>
             {checking ? <Spinner /> : <RefreshCw />} Check now
           </Button>
         }
       />
+      <SubTabs label="Insights" items={INSIGHT_TABS} />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <label className="flex items-center gap-2 text-sm text-fg-muted">
           <input type="checkbox" className="size-4 accent-accent" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} />
@@ -73,7 +76,7 @@ export default function AlertsPage() {
         </label>
         {me.alertEmails ? <p className="text-xs text-fg-muted">We also email you new alerts. Turn that off in Settings.</p> : null}
       </div>
-      {notice ? <p className="mb-3 rounded-lg bg-accent-soft p-3 text-sm" role="status">{notice}</p> : null}
+      {notice ? <p className="mb-3 rounded-xl bg-accent-soft p-3 text-sm" role="status">{notice}</p> : null}
       <ErrorText>{error}</ErrorText>
 
       {alerts.error ? (
@@ -93,8 +96,8 @@ export default function AlertsPage() {
         />
       ) : (
         <ul className="space-y-3">
-          {items.map((a) => (
-            <AlertCard key={a.id} a={a} cur={me.baseCurrency} onDismiss={() => dismiss(a.id)} />
+          {items.map((a, i) => (
+            <AlertCard key={a.id} a={a} index={i} cur={me.baseCurrency} onDismiss={() => dismiss(a.id)} />
           ))}
         </ul>
       )}
@@ -102,10 +105,10 @@ export default function AlertsPage() {
   );
 }
 
-function AlertCard({ a, cur, onDismiss }: { a: Alert; cur: string; onDismiss: () => void }) {
+function AlertCard({ a, index, cur, onDismiss }: { a: Alert; index: number; cur: string; onDismiss: () => void }) {
   const change = a.amount != null && a.baseline ? pctChange(a.amount, a.baseline) : null;
   return (
-    <li className={cn("flex gap-3 rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-4", a.dismissedAt && "opacity-60")}>
+    <li className={cn("spa-tile spa-in flex gap-3 rounded-2xl p-4", a.dismissedAt && "opacity-60")} style={delay(Math.min(index, 10) * 0.04)}>
       <AlertIcon kind={a.kind} />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
