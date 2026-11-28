@@ -4,9 +4,11 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { accounts, categoryRules, transactions } from "../db/schema.js";
+import { accounts, categoryRules, transactionSplits, transactions } from "../db/schema.js";
 import { CATEGORIES, CATEGORY_KEYS, NON_SPEND, isCategory } from "../lib/categories.js";
-import { notFound } from "../lib/errors.js";
+import { invalid, notFound } from "../lib/errors.js";
+import { MAX_NOTE_LENGTH, MAX_TAG_LENGTH, MAX_TAGS, normalizeNote, normalizeTags, ruleKey, SplitError, validateSplit } from "../lib/txnTools.js";
+import { toDbAmount } from "../lib/money.js";
 import { institutionName } from "../lib/institutions.js";
 import { num } from "../lib/money.js";
 import { recomputeAlertsForUser } from "../lib/insights/sweep.js";
@@ -19,7 +21,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The `Transaction` shape from ROUTES.md. `receiptId` = the linked receipt, if any. */
-export function transactionView(t: TxnRow, receiptId: string | null = null) {
+export function transactionView(t: TxnRow, receiptId: string | null = null, hasSplit = false) {
   return {
     id: t.id,
     accountId: t.accountId,
@@ -34,6 +36,9 @@ export function transactionView(t: TxnRow, receiptId: string | null = null) {
     sourceKind: t.sourceKind,
     categoryLocked: t.categoryLocked,
     receiptId,
+    tags: t.tags ?? [],
+    note: t.note ?? null,
+    hasSplit,
   };
 }
 
@@ -144,6 +149,7 @@ export async function transactionRoutes(fastify: FastifyInstance) {
           category: z.string().max(40).optional(),
           accountId: z.string().max(40).optional(),
           q: z.string().trim().max(100).optional(),
+          tag: z.string().trim().max(40).optional(),
           direction: z.enum(["debit", "credit"]).optional(),
           documentId: z.string().max(40).optional(),
           scope: z.enum(["me", "household"]).optional(),
@@ -164,7 +170,11 @@ export async function transactionRoutes(fastify: FastifyInstance) {
       if (qs.cursor && !cursor) return reply.code(400).send({ error: "invalid_cursor", code: "VALIDATION" });
       const like = qs.q ? `%${escapeLike(qs.q)}%` : null;
       const rows = await db
-        .select({ t: transactions, receiptId: sql<string | null>`(SELECT r.id FROM receipts r WHERE r.transaction_id = ${transactions.id})` })
+        .select({
+          t: transactions,
+          receiptId: sql<string | null>`(SELECT r.id FROM receipts r WHERE r.transaction_id = ${transactions.id})`,
+          hasSplit: sql<boolean>`EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = ${transactions.id})`,
+        })
         .from(transactions)
         .where(
           and(
@@ -176,7 +186,8 @@ export async function transactionRoutes(fastify: FastifyInstance) {
             qs.category ? eq(transactions.category, qs.category) : undefined,
             qs.accountId ? eq(transactions.accountId, qs.accountId) : undefined,
             qs.direction ? eq(transactions.direction, qs.direction) : undefined,
-            like ? or(ilike(transactions.merchant, like), ilike(transactions.descriptionRaw, like)) : undefined,
+            like ? or(ilike(transactions.merchant, like), ilike(transactions.descriptionRaw, like), ilike(transactions.note, like)) : undefined,
+            qs.tag ? sql`${normalizeTags([qs.tag])[0] ?? ""} = ANY(${transactions.tags})` : undefined,
             cursor ? sql`(${transactions.postedOn}, ${transactions.id}) < (${cursor.postedOn}::date, ${cursor.id}::uuid)` : undefined,
           ),
         )
@@ -184,7 +195,7 @@ export async function transactionRoutes(fastify: FastifyInstance) {
         .limit(qs.limit + 1);
       const page = rows.slice(0, qs.limit);
       return {
-        items: page.map((r) => (household ? { ...transactionView(r.t, r.receiptId), ownerId: r.t.userId } : transactionView(r.t, r.receiptId))),
+        items: page.map((r) => (household ? { ...transactionView(r.t, r.receiptId, r.hasSplit), ownerId: r.t.userId } : transactionView(r.t, r.receiptId, r.hasSplit))),
         nextCursor: rows.length > qs.limit ? encodeCursor(page[page.length - 1].t) : null,
       };
     },
@@ -196,24 +207,32 @@ export async function transactionRoutes(fastify: FastifyInstance) {
       preHandler: requireAuth,
       schema: {
         params: z.object({ id: z.string() }),
-        body: z.object({
-          category: z.string().refine(isCategory, "unknown category"),
-          applyToMerchant: z.boolean().optional(),
-        }),
+        body: z
+          .object({
+            category: z.string().refine(isCategory, "unknown category").optional(),
+            applyToMerchant: z.boolean().optional(),
+            tags: z.array(z.string().max(MAX_TAG_LENGTH + 10)).max(MAX_TAGS * 2).optional(),
+            note: z.string().max(MAX_NOTE_LENGTH * 2).nullable().optional(),
+          })
+          .refine((b) => b.category !== undefined || b.tags !== undefined || b.note !== undefined, "empty patch"),
       },
     },
     async (req) => {
       const userId = req.userId!;
       if (!UUID.test(req.params.id)) throw notFound();
-      const { category, applyToMerchant } = req.body;
+      const { category, applyToMerchant, tags, note } = req.body;
       const updated = await db.transaction(async (tx) => {
         const [t] = await tx
           .update(transactions)
-          .set({ category, categoryLocked: true })
+          .set({
+            ...(category ? { category, categoryLocked: true } : {}),
+            ...(tags !== undefined ? { tags: normalizeTags(tags) } : {}),
+            ...(note !== undefined ? { note: normalizeNote(note) } : {}),
+          })
           .where(and(eq(transactions.id, req.params.id), eq(transactions.userId, userId)))
           .returning();
         if (!t) return null;
-        if (applyToMerchant) {
+        if (category && applyToMerchant) {
           const key = t.merchant.trim().toLowerCase();
           await tx
             .insert(categoryRules)
@@ -234,8 +253,108 @@ export async function transactionRoutes(fastify: FastifyInstance) {
       });
       if (!updated) throw notFound();
       // Categories feed the spike detector; refresh this user's alerts (fail-soft).
-      void recomputeAlertsForUser(userId).catch((err) => req.log.warn({ userId, err: String(err) }, "alert recompute failed"));
-      return transactionView(updated);
+      if (category) void recomputeAlertsForUser(userId).catch((err) => req.log.warn({ userId, err: String(err) }, "alert recompute failed"));
+      const extra = await db.execute<{ has: boolean; receipt_id: string | null }>(sql`
+        SELECT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = ${updated.id}) AS has,
+               (SELECT r.id FROM receipts r WHERE r.transaction_id = ${updated.id} AND r.user_id = ${userId}) AS receipt_id`);
+      return transactionView(updated, extra.rows[0]?.receipt_id ?? null, extra.rows[0]?.has ?? false);
     },
   );
+
+  // ---------------------------------------------------------------- splits
+
+  app.put(
+    "/transactions/:id/splits",
+    {
+      preHandler: requireAuth,
+      schema: {
+        params: z.object({ id: z.string() }),
+        body: z.object({ parts: z.array(z.object({ category: z.string().max(40), amount: z.number().finite() })).max(20) }),
+      },
+    },
+    async (req) => {
+      const userId = req.userId!;
+      if (!UUID.test(req.params.id)) throw notFound();
+      const [t] = await db.select().from(transactions).where(and(eq(transactions.id, req.params.id), eq(transactions.userId, userId))).limit(1);
+      if (!t) throw notFound();
+      if (t.direction !== "debit") throw invalid("split_debits_only");
+      let parts: Array<{ category: string; amount: number }> = [];
+      if (req.body.parts.length) {
+        try {
+          parts = validateSplit(num(t.amount), req.body.parts);
+        } catch (err) {
+          if (err instanceof SplitError) throw invalid(err.message);
+          throw err;
+        }
+      }
+      await db.transaction(async (tx) => {
+        await tx.delete(transactionSplits).where(and(eq(transactionSplits.transactionId, t.id), eq(transactionSplits.userId, userId)));
+        if (parts.length) {
+          await tx.insert(transactionSplits).values(parts.map((p, i) => ({ userId, transactionId: t.id, position: i, category: p.category, amount: toDbAmount(p.amount) })));
+        }
+      });
+      return { parts };
+    },
+  );
+
+  app.delete("/transactions/:id/splits", { preHandler: requireAuth, schema: { params: z.object({ id: z.string() }) } }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) throw notFound();
+    const [t] = await db.select({ id: transactions.id }).from(transactions).where(and(eq(transactions.id, req.params.id), eq(transactions.userId, req.userId!))).limit(1);
+    if (!t) throw notFound();
+    await db.delete(transactionSplits).where(and(eq(transactionSplits.transactionId, t.id), eq(transactionSplits.userId, req.userId!)));
+    return reply.code(204).send();
+  });
+
+  // ---------------------------------------------------------------- tags + rules
+
+  app.get("/tags", { preHandler: requireAuth }, async (req) => {
+    const r = await db.execute<{ tag: string; n: number }>(sql`
+      SELECT tag, count(*)::int AS n FROM transactions, unnest(tags) AS tag
+      WHERE user_id = ${req.userId!} AND superseded_by IS NULL GROUP BY tag ORDER BY n DESC, tag LIMIT 100`);
+    return { items: r.rows.map((x) => ({ tag: x.tag, count: x.n })) };
+  });
+
+  app.get("/category-rules", { preHandler: requireAuth }, async (req) => {
+    const rows = await db.select().from(categoryRules).where(eq(categoryRules.userId, req.userId!)).orderBy(categoryRules.merchant);
+    return { items: rows.map((r) => ({ id: r.id, merchant: r.merchant, category: r.category, createdAt: r.createdAt.toISOString() })) };
+  });
+
+  app.post(
+    "/category-rules",
+    {
+      preHandler: requireAuth,
+      schema: {
+        body: z.object({ merchant: z.string().trim().min(1).max(80), category: z.string().refine(isCategory, "unknown category"), applyToPast: z.boolean().default(true) }),
+      },
+    },
+    async (req, reply) => {
+      const userId = req.userId!;
+      const key = ruleKey(req.body.merchant);
+      const { category, applyToPast } = req.body;
+      const [rule, updated] = await db.transaction(async (tx) => {
+        const [r] = await tx
+          .insert(categoryRules)
+          .values({ userId, merchant: key, category })
+          .onConflictDoUpdate({ target: [categoryRules.userId, categoryRules.merchant], set: { category } })
+          .returning();
+        const changed = applyToPast
+          ? await tx
+              .update(transactions)
+              .set({ category })
+              .where(and(eq(transactions.userId, userId), eq(transactions.categoryLocked, false), sql`lower(trim(${transactions.merchant})) = ${key}`))
+              .returning({ id: transactions.id })
+          : [];
+        return [r, changed.length] as const;
+      });
+      if (updated) void recomputeAlertsForUser(userId).catch((err) => req.log.warn({ userId, err: String(err) }, "alert recompute failed"));
+      return reply.code(201).send({ rule: { id: rule.id, merchant: rule.merchant, category: rule.category, createdAt: rule.createdAt.toISOString() }, updated });
+    },
+  );
+
+  app.delete("/category-rules/:id", { preHandler: requireAuth, schema: { params: z.object({ id: z.string() }) } }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) throw notFound();
+    const del = await db.delete(categoryRules).where(and(eq(categoryRules.id, req.params.id), eq(categoryRules.userId, req.userId!))).returning({ id: categoryRules.id });
+    if (!del.length) throw notFound();
+    return reply.code(204).send();
+  });
 }

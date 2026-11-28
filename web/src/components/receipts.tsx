@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { errorMessage, fetchReceiptImage, uploadDocuments } from "@/lib/api";
 import { CATEGORY_KEYS, categoryColor, categoryLabel } from "@/lib/categories";
 import { moneyExact } from "@/lib/format";
-import type { CategoryKey, Document, Receipt, ReceiptItem, ReceiptMatchStatus, ReceiptStatus } from "@/lib/types";
+import { TAX_TAGS, type CategoryKey, type Document, type Receipt, type ReceiptItem, type ReceiptMatchStatus, type ReceiptStatus } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { checkFiles } from "./UploadZone";
 import { ErrorText, Spinner } from "./common";
 import { Badge, type BadgeVariant } from "./ui/badge";
@@ -89,10 +90,13 @@ export function ReceiptItemsTable({
   items,
   currency,
   onCategory,
+  onTags,
 }: {
   items: ReceiptItem[];
   currency: string;
   onCategory?: (item: ReceiptItem, category: CategoryKey) => Promise<void>;
+  /** Shows the tax-tag toggles (and the HSA/FSA hint) per item when set. */
+  onTags?: (item: ReceiptItem, tags: string[]) => Promise<void>;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +146,45 @@ export function ReceiptItemsTable({
                 <span className="text-sm">{categoryLabel(it.category)}</span>
               )}
             </div>
+            {onTags ? (
+              <div className="col-span-2 flex flex-wrap items-center gap-1.5 sm:col-span-3">
+                {it.hsaSuggested && !(it.tags ?? []).includes("hsa-fsa") ? (
+                  <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2 py-px text-[11px] text-sky-200" title="Looks like it may be HSA/FSA eligible. A hint, not tax advice: check your plan.">
+                    HSA/FSA?
+                  </span>
+                ) : null}
+                {TAX_TAGS.map((t) => {
+                  const tags = it.tags ?? [];
+                  const on = tags.includes(t.tag);
+                  return (
+                    <button
+                      key={t.tag}
+                      type="button"
+                      aria-pressed={on}
+                      disabled={busy === it.id}
+                      onClick={async () => {
+                        setBusy(it.id);
+                        setError(null);
+                        try {
+                          await onTags(it, on ? tags.filter((x) => x !== t.tag) : [...tags, t.tag]);
+                        } catch (err) {
+                          setError(errorMessage(err));
+                        } finally {
+                          setBusy(null);
+                        }
+                      }}
+                      className={cn(
+                        "rounded-full border px-2 py-px text-[11px]",
+                        on ? "border-emerald-400/40 bg-emerald-400/15 text-emerald-100" : "border-white/10 text-zinc-500 hover:text-zinc-300",
+                      )}
+                    >
+                      {on ? "✓ " : "+ "}
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>

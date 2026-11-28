@@ -35,11 +35,14 @@ export function LegalPage({
   intro,
   toc,
   children,
+  updated = LAST_UPDATED,
 }: {
   title: string;
   intro: React.ReactNode;
   toc: TocEntry[];
   children: React.ReactNode;
+  /** "Last updated" date shown under the title (defaults to LAST_UPDATED). */
+  updated?: string;
 }) {
   return (
     <div className="flex min-h-screen flex-col">
@@ -54,7 +57,7 @@ export function LegalPage({
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 pt-6 pb-20">
         <article>
           <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{title}</h1>
-          <p className="mt-3 text-sm text-zinc-500">Last updated {LAST_UPDATED}</p>
+          <p className="mt-3 text-sm text-zinc-500">Last updated {updated}</p>
           <div className="mt-6 space-y-4 border-l-2 border-amber-400/40 pl-4 text-lg leading-relaxed text-zinc-300">{intro}</div>
           {toc.length ? (
             <nav aria-label="Contents" className="mt-10 rounded-xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-sm">

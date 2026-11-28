@@ -1,19 +1,19 @@
 "use client";
 
-import { Copy, Link2, Mail, ReceiptText, RefreshCw, Share2 } from "lucide-react";
+import { CalendarClock, Copy, Link2, Mail, ReceiptText, RefreshCw, Share2, TrendingDown, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
 import { delay, Eyebrow } from "@/components/app-ui";
 import { SOURCE_META } from "@/components/bits";
-import { CopyButton, EmptyState, ErrorText, LoadError, Loading, PageHeader, Spinner } from "@/components/common";
+import { CopyButton, EmptyState, ErrorText, LoadError, Loading, PageHeader, Panel, PanelTitle, Skeleton, Spinner } from "@/components/common";
 import { AddReceiptButton, duplicateReceiptIds, ReceiptBadges, ReceiptDropZone } from "@/components/receipts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { errorMessage, listReceipts, rematchReceipts } from "@/lib/api";
-import { fmtDate, fmtTimestamp, moneyExact } from "@/lib/format";
+import { errorMessage, getPriceTracks, getReturns, listReceipts, rematchReceipts } from "@/lib/api";
+import { fmtDate, fmtDay, fmtTimestamp, moneyExact } from "@/lib/format";
 import { useAsync, usePoll } from "@/lib/hooks";
 import { useSession } from "@/lib/session";
-import type { Receipt } from "@/lib/types";
+import type { PriceTrack, Receipt, RefundWatch } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Filter = "all" | "matched" | "unmatched";
@@ -99,6 +99,11 @@ export default function ReceiptsPage() {
       ) : null}
 
       <WaysIn address={me.forwardingAddress} onUploaded={refresh} />
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <ReturnsPanel />
+        <PricePanel />
+      </div>
 
       <div className="mt-6 mb-4 flex flex-wrap items-center justify-between gap-2">
         <div role="tablist" aria-label="Filter receipts" className="inline-flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
@@ -220,5 +225,162 @@ function ReceiptRow({ r, duplicate, index }: { r: Receipt; duplicate: boolean; i
         </div>
       </Link>
     </li>
+  );
+}
+
+const REFUND_LABEL: Record<RefundWatch["status"], [string, "warn" | "bad" | "good" | "muted"]> = {
+  waiting: ["Waiting", "warn"],
+  overdue: ["No refund yet", "bad"],
+  refunded: ["Refunded", "good"],
+  closed: ["Stopped", "muted"],
+};
+
+function ReturnsPanel() {
+  const res = useAsync(getReturns, "receipt-returns");
+  const d = res.data;
+  const refunds = (d?.refunds ?? []).filter((w) => w.status === "waiting" || w.status === "overdue");
+  const empty = d && !d.returnWindows.length && !d.warranties.length && !refunds.length;
+  return (
+    <Panel className="spa-in">
+      <PanelTitle>
+        <span className="inline-flex items-center gap-2">
+          <CalendarClock className="size-4 text-amber-300" aria-hidden /> Returns &amp; warranties
+        </span>
+      </PanelTitle>
+      {res.error ? (
+        <LoadError error={res.error} onRetry={res.reload} />
+      ) : !d ? (
+        <Skeleton className="h-24" />
+      ) : empty ? (
+        <p className="text-sm text-fg-muted">
+          Nothing open. Receipts from stores like Amazon, Target, Walmart or Best Buy show their typical return window here, and you can add a warranty
+          date or mark something returned on any receipt.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {d.returnWindows.length ? (
+            <ul className="divide-y divide-line">
+              {d.returnWindows.slice(0, 6).map((x) => (
+                <li key={x.receiptId}>
+                  <Link href={`/receipts/detail?id=${x.receiptId}`} className="flex items-center justify-between gap-3 py-2 hover:opacity-90">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{x.merchant ?? "Receipt"}</p>
+                      <p className="text-xs text-fg-muted">
+                        {x.total != null ? `${moneyExact(x.total, x.currency)} · ` : ""}returns until {x.window.closesOn ? fmtDay(x.window.closesOn) : "—"}
+                        {x.window.source === "typical" ? " (typical)" : ""}
+                      </p>
+                    </div>
+                    <Badge variant={(x.window.daysLeft ?? 99) <= 3 ? "bad" : "good"}>
+                      {x.window.daysLeft === 0 ? "Today" : `${x.window.daysLeft}d left`}
+                    </Badge>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {refunds.length ? (
+            <div>
+              <p className="mb-1 text-xs font-medium tracking-wide text-fg-muted uppercase">Refunds you&apos;re waiting for</p>
+              <ul className="divide-y divide-line">
+                {refunds.map((w) => {
+                  const [label, variant] = REFUND_LABEL[w.status];
+                  const href = w.transactionId ? `/transactions/detail?id=${w.transactionId}` : w.receiptId ? `/receipts/detail?id=${w.receiptId}` : "/receipts";
+                  return (
+                    <li key={w.id}>
+                      <Link href={href} className="flex items-center justify-between gap-3 py-2 hover:opacity-90">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{w.merchant}</p>
+                          <p className="text-xs text-fg-muted">
+                            {moneyExact(w.amount, w.currency)} · returned {fmtDay(w.returnedOn)}
+                          </p>
+                        </div>
+                        <Badge variant={variant}>{label}</Badge>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+          {d.warranties.length ? (
+            <div>
+              <p className="mb-1 text-xs font-medium tracking-wide text-fg-muted uppercase">Warranties</p>
+              <ul className="divide-y divide-line">
+                {d.warranties.slice(0, 5).map((x) => (
+                  <li key={x.receiptId}>
+                    <Link href={`/receipts/detail?id=${x.receiptId}`} className="flex items-center justify-between gap-3 py-2 hover:opacity-90">
+                      <p className="min-w-0 truncate text-sm">{x.merchant ?? "Receipt"}</p>
+                      <span className="shrink-0 text-xs text-fg-muted">until {fmtDate(x.warrantyUntil)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <p className="text-xs text-fg-muted">Return windows are typical store policies; check your receipt for the exact one.</p>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function Sparkline({ t }: { t: PriceTrack }) {
+  const pts = t.points;
+  if (pts.length < 2) return null;
+  const lo = t.minPrice;
+  const span = t.maxPrice - lo || 1;
+  const path = pts.map((p, i) => `${(i / (pts.length - 1)) * 60},${18 - ((p.unitPrice - lo) / span) * 16}`).join(" ");
+  return (
+    <svg viewBox="0 0 60 20" className="h-5 w-14 shrink-0" aria-hidden>
+      <polyline points={path} fill="none" stroke={t.changePct > 0 ? "#f87171" : t.changePct < 0 ? "#34d399" : "#a1a1aa"} strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function PricePanel() {
+  const res = useAsync(() => getPriceTracks({ limit: 8 }), "price-tracks");
+  const items = res.data?.items ?? [];
+  return (
+    <Panel className="spa-in" style={delay(0.05)}>
+      <PanelTitle>
+        <span className="inline-flex items-center gap-2">
+          <TrendingUp className="size-4 text-amber-300" aria-hidden /> Price tracker
+        </span>
+      </PanelTitle>
+      {res.error ? (
+        <LoadError error={res.error} onRetry={res.reload} />
+      ) : !res.data ? (
+        <Skeleton className="h-24" />
+      ) : !items.length ? (
+        <p className="text-sm text-fg-muted">
+          When you buy the same item again (eggs, milk, your usual coffee beans), we track what you paid each time. Keep adding receipts and price changes show up here.
+        </p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {items.map((t) => {
+            const up = t.changePct > 0;
+            const flat = Math.round(t.changePct) === 0;
+            return (
+              <li key={`${t.key}-${t.currency}`} className="flex items-center gap-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium" title={t.name}>
+                    {t.headline}
+                  </p>
+                  <p className="text-xs text-fg-muted tabular">
+                    {moneyExact(t.firstPrice, t.currency)} → {moneyExact(t.latestPrice, t.currency)} · {t.points.length} purchases
+                  </p>
+                </div>
+                <Sparkline t={t} />
+                <span className={cn("inline-flex shrink-0 items-center gap-0.5 text-sm font-semibold tabular", flat ? "text-fg-muted" : up ? "text-up" : "text-down")}>
+                  {flat ? null : up ? <TrendingUp className="size-3.5" aria-hidden /> : <TrendingDown className="size-3.5" aria-hidden />}
+                  {up ? "+" : ""}
+                  {Math.round(t.changePct)}%
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Panel>
   );
 }

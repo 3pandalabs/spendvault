@@ -35,6 +35,49 @@ const PAYMENT_HINT = /payment received|thank you|payment - thank|autopay payment
 const TOTAL_DUE = [/total amount due/i, /total dues?\b/i, /new balance/i, /total outstanding/i, /(?<!minimum |min\.? )amount due/i];
 const PREVIOUS = [/previous (statement )?balance/i, /opening balance/i, /balance b\/?f/i, /brought forward/i, /last statement balance/i];
 const CLOSING = [/closing balance/i, /balance c\/?f/i, /carried forward/i];
+const MIN_DUE = [/minimum (amount|payment) due/i, /minimum due/i, /min\.? amt\.? due/i, /minimum payment/i];
+const CREDIT_LIMIT = [/(?<!available |cash )credit limit/i, /(?<!available )credit line/i, /total credit limit/i];
+const DUE_DATE = [/payment due date/i, /(?<!statement )due date/i];
+
+/** Credit limits are often printed without cents ("Credit Limit $5,000"): accept a whole amount right after the label. */
+function labelLimit(lines: string[], res: RegExp[]): number | null {
+  const v = labelValue(lines, res);
+  if (v !== null) return v;
+  for (const re of res) {
+    for (const line of lines) {
+      const m = line.match(re);
+      if (!m || m.index === undefined) continue;
+      const w = line.slice(m.index + m[0].length).match(/^[\s:=]*(?:\$|₹|rs\.?|inr|usd)?\s*(\d{1,3}(?:,\d{2,3})+|\d{3,9})(?:\.(\d{2}))?(?!\d)/i);
+      if (w) return Number(`${w[1].replace(/,/g, "")}.${w[2] ?? "00"}`);
+    }
+  }
+  return null;
+}
+
+/** The date printed after (or under) a label such as "Payment Due Date". */
+function labelDate(lines: string[], res: RegExp[], order: DateOrder, refYear?: number): string | null {
+  for (const re of res) {
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(re);
+      if (!m || m.index === undefined) continue;
+      const own = findDates(lines[i].slice(m.index + m[0].length), order);
+      if (own.length) return own[0];
+      // Header row: same column on the next line.
+      const cols = lines[i].split(/\s{2,}/).map((c) => c.trim()).filter(Boolean);
+      const idx = cols.findIndex((c) => re.test(c));
+      for (let j = i + 1; j < Math.min(lines.length, i + 3); j++) {
+        const ds = findDates(lines[j], order);
+        if (!ds.length) continue;
+        if (ds.length === 1 || idx < 0) return ds[0];
+        const vcols = lines[j].split(/\s{2,}/).map((c) => c.trim()).filter(Boolean);
+        const hit = vcols[idx] ? findDates(vcols[idx], order)[0] : undefined;
+        return hit ?? ds[0];
+      }
+      void refYear;
+    }
+  }
+  return null;
+}
 
 function signedValue(a: AmountToken): number {
   return a.negative || a.marker === "cr" ? -a.value : a.value;
@@ -129,6 +172,9 @@ export function parseStatementText(text: string, opts: StatementOptions = {}): P
   const totalDue = labelValue(lines, TOTAL_DUE);
   const previousBalance = labelValue(lines, PREVIOUS);
   const closingBalance = labelValue(lines, CLOSING);
+  const minimumDue = labelValue(lines, MIN_DUE);
+  const creditLimit = labelLimit(lines, CREDIT_LIMIT);
+  const dueDate = labelDate(lines, DUE_DATE, order, refYear);
 
   const txns: ParsedTxn[] = [];
   let prevBalance: number | null = bankMode ? previousBalance : null;
@@ -237,6 +283,13 @@ export function parseStatementText(text: string, opts: StatementOptions = {}): P
     previousBalance: previousBalance === null ? null : Math.abs(previousBalance),
     totalDue: totalDue === null ? null : Math.abs(totalDue),
     closingBalance: closingBalance ?? (bankMode ? prevBalance : null),
+    ...(accountKind === "credit_card"
+      ? {
+          dueDate,
+          minimumDue: minimumDue === null ? null : Math.abs(minimumDue),
+          creditLimit: creditLimit === null || creditLimit === 0 ? null : Math.abs(creditLimit),
+        }
+      : {}),
     txns,
   };
 }

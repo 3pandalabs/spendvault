@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Check, Link2, Link2Off, ScanLine, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarClock, Check, Link2, Link2Off, ScanLine, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -8,6 +8,8 @@ import { CategoryChip } from "@/components/bits";
 import { EmptyState, ErrorText, Field, LoadError, Loading, PageHeader, Panel, PanelTitle, Spinner } from "@/components/common";
 import { ItemStrip, ReceiptBadges, ReceiptImage, ReceiptItemsTable, ReceiptSummaryLine } from "@/components/receipts";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { RefundBox } from "@/components/tools";
 import { Input } from "@/components/ui/input";
 import {
   confirmReceipt,
@@ -17,6 +19,7 @@ import {
   getReceipt,
   linkReceipt,
   receiptCandidates,
+  setReceiptItemTags,
   unlinkReceipt,
   updateReceipt,
   updateReceiptItem,
@@ -98,10 +101,16 @@ function ReceiptView({ r, onChange, reload }: { r: ReceiptDetail; onChange: (r: 
                 <ItemStrip items={r.items} amount={r.transaction?.amount ?? r.total} />
               </div>
             ) : null}
-            <ReceiptItemsTable items={r.items} currency={r.currency} onCategory={async (it, category) => onChange(await updateReceiptItem(r.id, it.id, category))} />
+            <ReceiptItemsTable
+              items={r.items}
+              currency={r.currency}
+              onCategory={async (it, category) => onChange(await updateReceiptItem(r.id, it.id, category))}
+              onTags={async (it, tags) => onChange(await setReceiptItemTags(r.id, it.id, tags))}
+            />
             {r.items.length ? (
               <p className="mt-2 text-xs text-fg-muted">
-                Item categories count toward your dashboard&apos;s category breakdown once the receipt is matched and its items add up.
+                Item categories count toward your dashboard&apos;s category breakdown once the receipt is matched and its items add up. Tax tags go into the
+                year-end tax export in Settings; &quot;HSA/FSA?&quot; marks items that may be eligible (a hint, not tax advice: check your plan).
               </p>
             ) : null}
           </section>
@@ -114,6 +123,17 @@ function ReceiptView({ r, onChange, reload }: { r: ReceiptDetail; onChange: (r: 
         </div>
 
         <div className="space-y-4">
+          <Panel>
+            <PanelTitle>
+              <span className="inline-flex items-center gap-2">
+                <CalendarClock className="size-4 text-amber-300" aria-hidden /> Return window &amp; warranty
+              </span>
+            </PanelTitle>
+            <ReturnPanel key={`${r.returnDays}|${r.warrantyUntil}|${r.purchasedOn}`} r={r} onChange={onChange} />
+            <div className="mt-4 border-t border-line pt-4">
+              <RefundBox refund={r.refund} target={{ receiptId: r.id }} onChange={(refund) => onChange({ ...r, refund })} />
+            </div>
+          </Panel>
           <Panel>
             <PanelTitle>Original</PanelTitle>
             <ReceiptImage receipt={r} />
@@ -276,5 +296,79 @@ function DetailsForm({ r, onChange }: { r: ReceiptDetail; onChange: (r: ReceiptD
         <ErrorText>{act.error}</ErrorText>
       </div>
     </form>
+  );
+}
+
+function ReturnPanel({ r, onChange }: { r: ReceiptDetail; onChange: (r: ReceiptDetail) => void }) {
+  const w = r.returnWindow;
+  const [days, setDays] = useState(r.returnDays != null ? String(r.returnDays) : "");
+  const [warranty, setWarranty] = useState(r.warrantyUntil ?? "");
+  const [saved, setSaved] = useState(false);
+  const act = useAction();
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaved(false);
+    const d = days.trim() === "" ? null : Number(days);
+    if (d !== null && (!Number.isInteger(d) || d < 0 || d > 3650)) return act.setError("Days must be a whole number (0 = final sale).");
+    const ok = await act.run(async () => onChange(await updateReceipt(r.id, { returnDays: d, warrantyUntil: warranty || null })), errorMessage);
+    setSaved(ok);
+  }
+
+  return (
+    <div className="space-y-3">
+      {!w || w.days == null ? (
+        <p className="text-sm text-fg-muted">
+          We don&apos;t know {r.merchant ? `${r.merchant}'s` : "this store's"} return window. Add the number of days below and we&apos;ll remind you 3 days before it closes.
+        </p>
+      ) : w.days === 0 ? (
+        <p className="text-sm text-fg-muted">Marked as final sale: no returns.</p>
+      ) : !r.purchasedOn ? (
+        <p className="text-sm text-fg-muted">
+          {w.days}-day {w.source === "typical" ? "typical " : ""}return window. Add the purchase date in Details to see when it closes.
+        </p>
+      ) : (
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            {w.open ? (
+              <Badge variant={w.daysLeft != null && w.daysLeft <= 3 ? "bad" : "good"}>
+                {w.daysLeft === 0 ? "Closes today" : `${w.daysLeft} day${w.daysLeft === 1 ? "" : "s"} left`}
+              </Badge>
+            ) : (
+              <Badge variant="muted">Closed</Badge>
+            )}
+            <span className="text-sm">
+              {w.open ? "Returns until" : "Closed on"} {fmtDate(w.closesOn)}
+            </span>
+          </div>
+          <p className="text-xs text-fg-muted">
+            {w.source === "custom"
+              ? `Your setting: ${w.days} days.`
+              : `Typical for ${w.policyName ?? "this store"}: ${w.days} days. Actual policies vary by item and membership, so check your receipt.`}
+            {w.note ? ` ${w.note}` : ""}
+          </p>
+        </div>
+      )}
+      {r.warrantyUntil ? (
+        <p className="flex items-center gap-1.5 text-sm">
+          <ShieldCheck className="size-4 text-emerald-300" aria-hidden /> Warranty until {fmtDate(r.warrantyUntil)}
+        </p>
+      ) : null}
+      <form onSubmit={save} className="grid gap-3 sm:grid-cols-2">
+        <Field label="Return window (days)" htmlFor="rc-days" hint={w?.source === "typical" ? `Empty = typical (${w.days})` : "Empty = typical; 0 = final sale"}>
+          <Input id="rc-days" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder={w?.days != null && w.source === "typical" ? String(w.days) : "e.g. 30"} />
+        </Field>
+        <Field label="Warranty ends (optional)" htmlFor="rc-warranty" hint="We remind you 30 days before.">
+          <Input id="rc-warranty" type="date" value={warranty} onChange={(e) => setWarranty(e.target.value)} />
+        </Field>
+        <div className="flex items-center gap-3 sm:col-span-2">
+          <Button type="submit" size="sm" variant="outline" disabled={act.busy}>
+            {act.busy ? <Spinner /> : null} Save
+          </Button>
+          {saved ? <span className="text-sm text-down">Saved</span> : null}
+          <ErrorText>{act.error}</ErrorText>
+        </div>
+      </form>
+    </div>
   );
 }

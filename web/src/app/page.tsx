@@ -7,6 +7,11 @@ import {
   Camera,
   Check,
   CircleAlert,
+  CreditCard,
+  MessageCircleQuestion,
+  PiggyBank,
+  Tags,
+  Undo2,
   EyeOff,
   FileDown,
   FileSpreadsheet,
@@ -90,6 +95,7 @@ const RECEIPT_POINTS = [
   { icon: Camera, t: "Snap, upload or forward", b: "Photograph a paper receipt, upload a PDF invoice, or forward the order confirmation email." },
   { icon: ScanLine, t: "Claude reads every line", b: "Store, date, each item and its price, pulled out for you. Nothing to type." },
   { icon: BadgeCheck, t: "Matched to the card charge", b: "Each receipt is paired with the transaction that paid for it, so one charge becomes many categories." },
+  { icon: Undo2, t: "Returns, warranties and prices", b: "See when a store's typical return window closes, note warranty dates, track the refund after you send something back, and watch the price of things you buy again and again." },
 ];
 
 const WAYS_IN = [
@@ -133,6 +139,12 @@ const FEATURES = [
   { icon: Users, t: "Shared household", b: "Invite your partner and see your combined spending. Each of you keeps your own statements and receipts private." },
   { icon: FileDown, t: "Your data is yours", b: "Export every transaction to CSV whenever you like. Free, always." },
   { icon: LayoutDashboard, t: "One dashboard", b: "Spend by category, day, merchant and card, month over month." },
+  { icon: CreditCard, t: "Card due dates", b: "Due date, minimum and balance read from each statement, a reminder 5 days and 1 day before, and how much of your limit you're using." },
+  { icon: MessageCircleQuestion, t: "Ask SpendVault", b: "Ask in plain English, like “how much on coffee in October?”, and get an answer from your own data." },
+  { icon: Tags, t: "Split, tag and note", b: "Split one charge across categories, add tags and notes, set merchant rules that fix past and future charges, and search it all." },
+  { icon: PiggyBank, t: "Savings goals", b: "Set a target and a date and see how much to put aside each month." },
+  { icon: Mail, t: "Weekly or monthly summary", b: "An optional email with what you spent, your top categories, new subscriptions and card payments coming up." },
+  { icon: FileText, t: "Tax tags", b: "Tag charges and receipt items as tax-deductible, business or HSA/FSA eligible, then export the year as a CSV." },
 ];
 
 const PRIVACY = [
@@ -399,6 +411,7 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
+              <p className="mt-4 text-sm text-zinc-400">Spots free trials that turned paid, and links to each service&apos;s own page to cancel.</p>
             </div>
 
             {/* Budgets */}

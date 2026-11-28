@@ -41,6 +41,9 @@ export const llmStatementSchema = z.object({
   previousBalance: optNum,
   totalDue: optNum,
   closingBalance: optNum,
+  dueDate: DATE.nullable().optional().catch(null),
+  minimumDue: optNum,
+  creditLimit: optNum,
   transactions: z.array(z.unknown()),
 });
 
@@ -59,6 +62,9 @@ const STATEMENT_TOOL = {
       previousBalance: { type: ["number", "null"], description: "Opening balance: 'Previous balance' on a card statement, 'Beginning/Opening balance' on a bank statement. Copy it exactly; null if not printed." },
       totalDue: { type: ["number", "null"], description: "Credit cards: the statement 'New balance' / 'Total amount due' (not the minimum due)" },
       closingBalance: { type: ["number", "null"], description: "Bank accounts: 'Ending/Closing balance' for the period" },
+      dueDate: { type: ["string", "null"], description: "Credit cards: 'Payment due date', YYYY-MM-DD; null if not printed" },
+      minimumDue: { type: ["number", "null"], description: "Credit cards: 'Minimum payment due' / 'Minimum amount due'; null if not printed" },
+      creditLimit: { type: ["number", "null"], description: "Credit cards: total 'Credit limit' / 'Credit line' (not available credit, not cash limit); null if not printed" },
       transactions: {
         type: "array",
         items: {
@@ -134,6 +140,9 @@ export function validateStatementInput(input: unknown): Omit<ParseResult, "parse
     previousBalance: d.previousBalance ?? null,
     totalDue: d.totalDue ?? null,
     closingBalance: d.closingBalance ?? null,
+    ...(d.accountKind === "credit_card"
+      ? { dueDate: d.dueDate ?? null, minimumDue: d.minimumDue ?? null, creditLimit: d.creditLimit && d.creditLimit > 0 ? d.creditLimit : null }
+      : {}),
     txns,
   };
 }

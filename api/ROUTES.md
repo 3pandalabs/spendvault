@@ -18,7 +18,8 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
 - `POST /auth/password-reset/confirm` `{ token, password }` → 204; 400 `invalid_or_expired_token`
 
 `AuthResponse = { accessToken, refreshToken, user: User }`
-`User = { id, email, displayName, baseCurrency, alertEmails, deleteOriginals, monthlyBudget: number|null, createdAt }`
+`User = { id, email, displayName, baseCurrency, alertEmails, deleteOriginals, monthlyBudget: number|null, timezone: string|null, digestWeekly: boolean, digestMonthly: boolean, createdAt }`
+`timezone` = the browser's IANA zone (the web app sends it); it decides "today" for card dues, return windows, digests and month boundaries. null → by currency (INR → Asia/Kolkata, else America/New_York). `lib/userTime.ts`.
 
 ## Me / setup
 - `GET /me` → `Me`
@@ -32,12 +33,13 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
     household: { id, name, memberCount }|null
   }
   ```
-- `PATCH /me` `{ displayName?, alertEmails?, deleteOriginals?, baseCurrency? ("USD"|"INR"), monthlyBudget?: number|null }` → `Me` (`monthlyBudget` 0/null clears it)
+- `PATCH /me` `{ displayName?, alertEmails?, deleteOriginals?, baseCurrency? ("USD"|"INR"), monthlyBudget?: number|null, timezone?: string|null, digestWeekly?: boolean, digestMonthly?: boolean }` → `Me` (`monthlyBudget` 0/null clears it; an unknown `timezone` → 400)
 - `DELETE /me` `{ password }` → 204. Leaves any household first, then deletes the user and ALL their data (cascade). 401 `invalid_credentials`.
-- `GET /me/export` → `{ transactions: Transaction[], accounts: Account[], alerts: Alert[], receipts: Array<Receipt & { items: ReceiptItem[] }> }` (JSON download of everything parsed)
-- `GET /me/export/transactions.csv` → `text/csv` (UTF-8 BOM, CRLF): `date, merchant, description, category, amount, direction, signed_amount, currency, account, source, receipt_id, transaction_id` (non-superseded, newest first). Text cells starting with `= + - @` get a leading `'` (no formula injection).
+- `GET /me/export` → `{ transactions: Transaction[], accounts: Account[], alerts: Alert[], receipts: Array<Receipt & { items: ReceiptItem[] }>, splits, refunds, goals, categoryRules }` (JSON download of everything parsed)
+- `GET /me/export/transactions.csv` → `text/csv` (UTF-8 BOM, CRLF): `date, merchant, description, category, amount, direction, signed_amount, currency, account, source, tags, note, receipt_id, transaction_id` (non-superseded, newest first). Text cells starting with `= + - @` get a leading `'` (no formula injection).
+- `GET /me/export/tax.csv?year=YYYY&tag=` → `text/csv`: `type (transaction|receipt_item), date, merchant, description, category, amount, currency, tax_tags, note, transaction_id, receipt_id` for the year's transactions and receipt items carrying a tax tag (`tax-deductible`, `business`, `hsa-fsa`; `tag` narrows to one, 400 `invalid_tag` otherwise). Credits are negative.
 - `GET /me/export/receipt-items.csv` → `text/csv`: `purchase_date, merchant, item, quantity, unit_price, line_total, category, receipt_total, currency, receipt_id, transaction_id`
-  (all three exports share one limiter: 10/hour)
+  (all four exports share one limiter: 10/hour)
 - `GET /setup/forwarding` →
   ```
   { address, gmailFilterQuery: string, gmailSteps: string[],
@@ -62,6 +64,7 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
     reconciled: boolean|null,
     openingBalance: number|null, closingBalance: number|null, extractedCredits: number|null,
     reconcileDifference: number|null,   // closing − (opening ± what we read); card: + = charges we didn't read
+    dueDate: string|null, minimumDue: number|null, creditLimit: number|null,   // credit-card statements only (0003)
     txnCount, parser: string|null, error: string|null,
     hasOriginal: boolean, processedAt: string|null, createdAt }
   ```
@@ -79,14 +82,21 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
 - `PATCH /accounts/:id` `{ label?: string|null, includeInNetWorth?: boolean }` → `Account`
 
 ## Transactions
-- `GET /transactions?from=&to=&category=&accountId=&documentId=&q=&direction=&scope=me|household&member=all|<userId>&limit=100&cursor=` → `{ items: Transaction[], nextCursor: string|null }` (newest `postedOn` first; superseded rows excluded). `scope=household` reads every household member's rows (or `member`'s; 404 if not a member) and adds `ownerId` to each item; other members' rows stay read-only (PATCH/detail → 404).
+- `GET /transactions?from=&to=&category=&accountId=&documentId=&q=&tag=&direction=&scope=me|household&member=all|<userId>&limit=100&cursor=` (`q` matches merchant, description and note; `tag` = one tag) → `{ items: Transaction[], nextCursor: string|null }` (newest `postedOn` first; superseded rows excluded). `scope=household` reads every household member's rows (or `member`'s; 404 if not a member) and adds `ownerId` to each item; other members' rows stay read-only (PATCH/detail → 404).
   ```
   Transaction = { id, accountId: string|null, documentId: string|null, postedOn, descriptionRaw, merchant, category,
     amount: number, direction: "debit"|"credit", currency, sourceKind: "statement"|"alert"|"csv", categoryLocked: boolean,
-    receiptId: string|null }                                              // the linked receipt, if any
+    receiptId: string|null,                                               // the linked receipt, if any
+    tags: string[], note: string|null, hasSplit: boolean }
   ```
-- `GET /transactions/:id` → `Transaction & { receipt: ReceiptDetail|null }` (transaction detail view with the receipt's line items)
-- `PATCH /transactions/:id` `{ category, applyToMerchant?: boolean }` → `Transaction`. `applyToMerchant` upserts a category rule and recategorizes all of this user's unlocked transactions with that merchant.
+- `GET /transactions/:id` → `Transaction & { receipt: ReceiptDetail|null, splits: SplitPart[], refund: RefundWatch|null }` (transaction detail view with the receipt's line items)
+- `PATCH /transactions/:id` `{ category?, applyToMerchant?: boolean, tags?: string[], note?: string|null }` (at least one) → `Transaction`. `applyToMerchant` upserts a category rule and recategorizes all of this user's unlocked transactions with that merchant (past and future). Tags are normalized (lowercase, `a-z0-9-_`, ≤ 30 chars, ≤ 10); notes ≤ 500 chars, empty clears.
+- `PUT /transactions/:id/splits` `{ parts: SplitPart[] }` → `{ parts }`. `SplitPart = { category, amount }`; 2–10 parts in ≥ 2 categories, each > 0, summing to the amount (±$0.01); `[]` clears. 400 `split_must_add_up` / `split_needs_2_to_10_parts` / `split_needs_2_categories` / `invalid_category` / `split_debits_only`. Splits feed `GET /dashboard` category views (byCategory, trend) like receipt item splits, and win over them; budgets and alerts keep whole transactions.
+- `DELETE /transactions/:id/splits` → 204
+- `GET /tags` → `{ items: Array<{ tag, count }> }` (the caller's tags, most used first)
+- `GET /category-rules` → `{ items: Array<{ id, merchant, category, createdAt }> }` (merchant = lowercase normalized name)
+- `POST /category-rules` `{ merchant, category, applyToPast = true }` → 201 `{ rule, updated: number }` (upsert; `applyToPast` recategorizes unlocked past transactions; future statements always use it)
+- `DELETE /category-rules/:id` → 204 (past transactions keep their category)
 - `GET /categories` → `{ items: Array<{ key, label, essential: boolean, spend: boolean }> }` (public)
 
 ## Dashboard
@@ -106,7 +116,8 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
     scope: "me"|"household", members: Array<{ userId, displayName, isMe }>,   // [] outside a household view
     safeToSpend: SafeToSpend|null,                                         // current month, own view only
     budgets: { count, over, near, top: BudgetLine[] }|null,                // top 3 by progress
-    netWorth: { netWorth, assets, liabilities, asOf: string|null }|null }  // null when nothing counts
+    netWorth: { netWorth, assets, liabilities, asOf: string|null }|null,   // null when nothing counts
+    upcomingDues: CardDue[] }                                              // unpaid cards due within 14 days (or overdue); [] in household view
   SafeToSpend = { month, basis: "budget"|"category_budgets"|"income", base, spent, upcoming,
     upcomingItems: Array<{ merchant, amount, expectedOn }>, amount, daysLeft, perDay }
   ```
@@ -114,8 +125,14 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
 
 ## Alerts (spikes)
 - `GET /alerts?includeDismissed=false&limit=50` → `{ items: Alert[] }`
-  `Alert = { id, kind: "category_spike"|"daily_spike"|"large_new_merchant"|"price_hike"|"fee"|"duplicate"|"new_subscription"|"over_budget", title, body, category: string|null, merchant: string|null, amount: number|null, baseline: number|null, periodStart: string|null, createdAt, dismissedAt: string|null }`
+  `Alert = { id, kind: "category_spike"|"daily_spike"|"large_new_merchant"|"price_hike"|"fee"|"duplicate"|"new_subscription"|"over_budget"|"card_due"|"return_window"|"warranty"|"refund_missing"|"trial_converted", title, body, category: string|null, merchant: string|null, amount: number|null, baseline: number|null, periodStart: string|null, createdAt, dismissedAt: string|null }`
   `new_subscription`: a subscription-like recurring charge whose first charge is ≤ 75 days old, or a first-ever `subscriptions` debit ≤ 35 days old, with ≥ 30 days of history before it (once per merchant). `over_budget`: a category (or the overall monthly budget) over budget in this or last month (once per category per month). `fee`: the month's fees by type (late, interest, foreign transaction, annual, cash advance, ATM, over-limit, overdraft/returned payment).
+  `duplicate`: same merchant + amount on the same account within 2 days, not a recurring merchant, not alert-vs-statement (existing).
+  Reminders (0003, `insights/cards.ts`, `receipts/returns.ts`, `insights/refunds.ts`, `insights/trials.ts`; the worker re-checks every user with something pending every 6 h, in their time zone):
+  `card_due`: an unpaid card statement due in 2–5 days (stage 5) and again the day before/of (stage 1); dedupe `card_due:<account>:<dueDate>:<stage>`. Paid = card-payment credits on that card since the statement closed ≥ the minimum due (or the balance).
+  `return_window`: a receipt ≥ $25 / ₹1,000 with non-grocery items whose (typical or custom) return window closes within 3 days and that isn't marked returned. `warranty`: a receipt's warranty end within 30 days.
+  `refund_missing`: a purchase marked returned with no matching credit after 14 days. `trial_converted`: a ≤ $1 charge, then 7–31 days later a ≥ 5× (≥ $3) charge from the same merchant (full charge in the last 45 days; `data.cancelUrl` when known).
+  Every alert email goes through the daily alert digest (≤ 1/day, `alertEmails`); a stage-1 card reminder doesn't wait for the 20-hour gap.
 - `POST /alerts/:id/dismiss` → 204
 - `POST /alerts/recompute` → `{ created: number }` (runs the detector for the caller now; rate limited)
 
@@ -134,7 +151,8 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
   ```
   { currency, monthlyTotal, yearlyTotal,
     items: Array<{ merchant, category, cadence: "weekly"|"monthly"|"yearly", amount, monthlyAmount, annualCost,
-      firstChargedOn, lastChargedOn, nextExpectedOn, occurrences, priceChanged: boolean, previousAmount: number|null, isNew: boolean }> }
+      firstChargedOn, lastChargedOn, nextExpectedOn, occurrences, priceChanged: boolean, previousAmount: number|null, isNew: boolean,
+      cancel: { name, url, note? }|null }> }   // official account/help page (insights/cancelLinks.ts); we never cancel for the user
   ```
   Active recurring charges (same merchant, regular interval, similar amount; `lib/insights/recurring.ts`) in subscription-like categories, biggest monthly cost first. `nextExpectedOn` = last charge + one cadence step (monthly keeps the day of month). `isNew` = first charge ≤ 75 days ago.
 
@@ -161,6 +179,36 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
 - `PATCH /net-worth/items/:id` (any of those fields) → `NetWorthItem`
 - `DELETE /net-worth/items/:id` → 204
 
+## Cards (0003)
+`CardDue = { accountId, label, currency, documentId, statementBalance: number|null, minimumDue: number|null, dueDate: string|null, daysUntilDue: number|null, creditLimit: number|null, utilization: number|null, paidSinceStatement, status: "paid"|"overdue"|"due_soon"|"upcoming"|"nothing_due"|"unknown" }`
+- `GET /cards` → `{ items: CardDue[] }` — each credit card's latest parsed statement (due date, minimum due, statement balance and credit limit come from the rules parser or Claude extraction; a limit printed on an older statement is reused). `utilization` = balance / limit. Sorted overdue, then soonest due. `due_soon` = ≤ 5 days.
+
+## Refunds (0003)
+`RefundWatch = { id, transactionId: string|null, receiptId: string|null, merchant, amount, currency, returnedOn, status: "waiting"|"overdue"|"refunded"|"closed", refundTransactionId: string|null, refundedOn: string|null, refundAmount: number|null, createdAt }`
+A watch is matched to a credit from the same merchant (fuzzy), same currency, 2 days before to 60 days after `returnedOn`, amount 50%–100% (+ tolerance) of the expected refund; one credit per watch. `overdue` after 14 days.
+- `GET /refunds` → `{ items: RefundWatch[] }` (newest first; re-matches open watches first)
+- `POST /refunds` `{ transactionId?, receiptId?, returnedOn? (default today), amount? (default the purchase/receipt total) }` → 201 `RefundWatch` ("I returned this"); 409 `already_returned`; 400 `refund_debits_only` / `amount_required`
+- `POST /refunds/:id/close` → `RefundWatch` (stop waiting; `status: "closed"`)
+- `DELETE /refunds/:id` → 204 (undo "returned")
+
+## Savings goals (0003)
+`Goal = { id, name, targetAmount, targetDate: string|null, currency, createdAt, progress: { saved, remaining, progress (0..1), monthsLeft: number|null, monthlyNeeded: number|null, recentMonthlyPace, status: "done"|"on_track"|"behind"|"overdue"|"no_date" }, contributions: Array<{ id, amount, contributedOn, note, createdAt }> }`
+monthsLeft counts the current month; monthlyNeeded = remaining / monthsLeft; on track = average of the last 3 months' contributions ≥ monthlyNeeded (`insights/goals.ts`). Manual contributions only (negative = withdrawal).
+- `GET /goals` → `{ currency, items: Goal[] }`
+- `POST /goals` `{ name, targetAmount > 0, targetDate?: string|null, startingAmount? }` → 201 `Goal` (max 20 goals; 400 `too_many_goals`)
+- `PATCH /goals/:id` `{ name?, targetAmount?, targetDate? }` → `Goal`
+- `DELETE /goals/:id` → 204
+- `POST /goals/:id/contributions` `{ amount ≠ 0, contributedOn?, note? }` → 201 `Goal`
+- `DELETE /goals/:id/contributions/:cid` → `Goal`
+
+## Ask SpendVault (0003)
+Claude (`ANTHROPIC_MODEL`) answers questions about the caller's OWN data via a short tool loop (`lib/ask/*`). The tools are fixed and parameterized (`spending_summary`, `find_transactions`, `receipt_items`, `subscriptions`, `card_dues`, `budgets`, `savings_goals`), every read is bound to the caller's user id server-side (`ask/db.ts`), inputs are Zod-validated (unknown fields rejected, ranges ≤ 3 years, ≤ 25 rows). No free SQL, no household or other users' data. Aggregated tool results (totals, merchants, dates, amounts) are sent to Anthropic; we store only token usage (`ask_usage`), never the question or answer.
+- `GET /ask/usage` → `{ available: boolean, used, limit }` (rolling 24 h)
+- `POST /ask` `{ question (2–500 chars), history?: Array<{ role: "user"|"assistant", text }> (last 6 used) }` → `{ answer, toolsUsed: string[], usage: { used, limit } }`. 503 `llm_unavailable` without `ANTHROPIC_API_KEY`; 429 `ask_limit_reached` after 20 questions in 24 h; 502 `ask_failed`.
+
+## Digests (0003)
+Weekly (last Mon–Sun, opt-in, `digestWeekly`) and monthly (last calendar month, on by default, `digestMonthly`) summary emails: spend vs the previous period, top 3 categories, new subscriptions, card payments due in the next 14 days, alert count. Sent from 8am in the user's time zone, one per user per period (`users.last_weekly_digest` / `last_monthly_digest` claim the period before sending); periods with no transactions send nothing. `insights/periodDigest.ts`.
+
 ## Household (couples; 404 on every route when HOUSEHOLD_ENABLED=false)
 Members read each other's transactions in combined views (`GET /dashboard`/`GET /transactions` with `scope=household`). Everything else (documents, receipts, alerts, budgets, net worth, settings) stays personal. At most 4 members + pending invites; one household per user.
 `Household = { id, name, role: "owner"|"member", members: Array<{ userId, displayName, email, role, joinedAt, isMe }>, invites: Array<{ id, email, expiresAt, createdAt }> }`
@@ -181,16 +229,20 @@ Receipt = { id, documentId, status: "processing"|"pending_extraction"|"extracted
   merchant: string|null, purchasedOn: string|null, total: number|null, tax: number|null, currency,
   itemCount, itemsReconciled: boolean|null, parser: string|null, error: string|null,
   source: "email"|"upload"|"share"|"whatsapp", filename: string|null, mimeType, hasImage: boolean,
-  transactionId: string|null, matchStatus: "unmatched"|"auto"|"confirmed", matchedAt: string|null, createdAt }
-ReceiptItem = { id, name, quantity: number|null, unitPrice: number|null, lineTotal: number, category, categoryLocked: boolean }
-ReceiptDetail = Receipt & { items: ReceiptItem[], transaction: Transaction|null }
+  transactionId: string|null, matchStatus: "unmatched"|"auto"|"confirmed", matchedAt: string|null,
+  returnDays: number|null, warrantyUntil: string|null, createdAt }   // returnDays: per-receipt override (0 = final sale); null = typical
+ReceiptItem = { id, name, quantity: number|null, unitPrice: number|null, lineTotal: number, category, categoryLocked: boolean, tags: string[] }
+ReceiptDetail = Receipt & { items: Array<ReceiptItem & { hsaSuggested: boolean }>, transaction: Transaction|null, returnWindow: ReturnWindow, refund: RefundWatch|null }
+ReturnWindow = { source: "typical"|"custom"|null, policyName: string|null, days: number|null, note: string|null, closesOn: string|null, daysLeft: number|null, open: boolean }
 ```
 - `GET /receipts?match=all|matched|unmatched&status=&limit=50&cursor=` → `{ items: Receipt[], nextCursor: string|null }` (newest first)
 - `GET /receipts/:id` → `ReceiptDetail`
 - `GET /receipts/:id/image` → the decrypted original (`content-type` = its mime, `cache-control: private, no-store`); 404 once the original is deleted
 - `GET /receipts/:id/candidates` → `{ items: Array<Transaction & { score: number }> }` (up to 10 transactions to link instead, best first; ±7 days around the window, ±10% amount)
-- `PATCH /receipts/:id` `{ merchant?: string|null, purchasedOn?: string|null, total?: number, tax?: number|null, currency?: "INR"|"USD" }` → `ReceiptDetail`. A `total` on a receipt that wasn't AI-extracted makes it `manual` (its document → `parsed`); an unlinked receipt is then auto-matched.
-- `PATCH /receipts/:id/items/:itemId` `{ category }` → `ReceiptDetail` (locks the item's category)
+- `PATCH /receipts/:id` `{ merchant?: string|null, purchasedOn?: string|null, total?: number, tax?: number|null, currency?: "INR"|"USD", returnDays?: number|null, warrantyUntil?: string|null }` → `ReceiptDetail`. A `total` on a receipt that wasn't AI-extracted makes it `manual` (its document → `parsed`); an unlinked receipt is then auto-matched.
+- `PATCH /receipts/:id/items/:itemId` `{ category?, tags? }` → `ReceiptDetail` (a category locks the item's category; tags as on transactions, e.g. `hsa-fsa`)
+- `GET /receipts/prices?q=&limit=30` → `{ items: Array<{ key, name, currency, points: Array<{ date, unitPrice, merchant, receiptId }>, firstPrice, latestPrice, changePct, since, latestOn, minPrice, maxPrice, headline }> }` — the same item (normalized name, same currency) bought on ≥ 2 dates in the last 2 years, biggest change first (`receipts/prices.ts`; headline e.g. "Eggs up 18% since August")
+- `GET /receipts/returns` → `{ returnWindows: Array<{ receiptId, merchant, purchasedOn, total, currency, window: ReturnWindow }>, warranties: Array<{ receiptId, merchant, purchasedOn, total, currency, warrantyUntil }>, refunds: RefundWatch[], policies: Array<{ key, name, days, note }> }` (open windows soonest first, not yet returned). Typical windows (`receipts/returns.ts`, editable table): Amazon 30, Target 90, Walmart 90, Costco 90 (electronics), Best Buy 15, Apple 14, Home Depot 90, Lowe's 90, IKEA 365, Kohl's 180, Macy's 30, Nike 60 days. HSA/FSA suggestions (`lib/tax.ts`) are hints, not advice.
 - `POST /receipts/:id/link` `{ transactionId }` → `ReceiptDetail` (`matchStatus: "confirmed"`); 404 unknown transaction; 409 `transaction_already_linked`
 - `POST /receipts/:id/confirm` → `ReceiptDetail`; 409 `not_linked`
 - `POST /receipts/:id/unlink` → `ReceiptDetail` (that transaction is never auto-linked to this receipt again)

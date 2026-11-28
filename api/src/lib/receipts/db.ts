@@ -268,6 +268,8 @@ export function receiptView(r: ReceiptRow, d: Pick<ReceiptDocFields, "source" | 
     transactionId: r.transactionId,
     matchStatus: (r.transactionId ? r.matchStatus : "unmatched") as ReceiptMatchStatus,
     matchedAt: r.transactionId && r.matchedAt ? r.matchedAt.toISOString() : null,
+    returnDays: r.returnDays,
+    warrantyUntil: r.warrantyUntil,
     createdAt: r.createdAt.toISOString(),
   };
 }
@@ -282,6 +284,7 @@ export function receiptItemView(i: ReceiptItemRow) {
     lineTotal: num(i.lineTotal),
     category: i.category,
     categoryLocked: i.categoryLocked,
+    tags: i.tags ?? [],
   };
 }
 

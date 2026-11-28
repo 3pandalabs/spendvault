@@ -14,6 +14,9 @@ export function userView(u: UserRow) {
     alertEmails: u.alertEmails,
     deleteOriginals: u.deleteOriginals,
     monthlyBudget: toNum(u.monthlyBudget),
+    timezone: u.timezone ?? null,
+    digestWeekly: u.digestWeekly,
+    digestMonthly: u.digestMonthly,
     createdAt: u.createdAt.toISOString(),
   };
 }
