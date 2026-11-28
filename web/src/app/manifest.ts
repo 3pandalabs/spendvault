@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/",
     name: "SpendVault",
     short_name: "SpendVault",
-    description: "One spending dashboard for every card and bank account.",
+    description: "Every card, every receipt, down to the line item.",
     start_url: "/dashboard",
     scope: "/",
     display: "standalone",

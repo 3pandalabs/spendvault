@@ -149,6 +149,43 @@
 }
 @keyframes spv-shine { 0%, 60% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
 
+/* ---------- Receipt stage: charge -> receipt scanned -> split ---------- */
+/* 10s loop shared by every receipt-stage piece; --d staggers them. */
+.spv-cycle { opacity: 0; animation: spv-cycle 10s ease-out infinite backwards; animation-delay: var(--d, 0s); }
+@keyframes spv-cycle {
+  0% { opacity: 0; transform: translateY(6px); }
+  4%, 80% { opacity: 1; transform: translateY(0); }
+  88%, 100% { opacity: 0; transform: translateY(0); }
+}
+.spv-fill { transform-origin: left; transform: scaleX(0); animation: spv-fill 10s cubic-bezier(.2,.8,.2,1) infinite backwards; animation-delay: var(--d, 0s); }
+@keyframes spv-fill {
+  0% { transform: scaleX(0); }
+  8%, 80% { transform: scaleX(1); }
+  88%, 100% { transform: scaleX(0); }
+}
+/* Torn-paper bottom edge + a scanner line sweeping the receipt. */
+.spv-receipt {
+  -webkit-mask: linear-gradient(#000 0 0) top / 100% calc(100% - 6px) no-repeat, conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 12px 6px repeat-x;
+  mask: linear-gradient(#000 0 0) top / 100% calc(100% - 6px) no-repeat, conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 12px 6px repeat-x;
+}
+.spv-scan {
+  top: 0;
+  background: linear-gradient(180deg, transparent, rgb(251 191 36 / .35) 50%, transparent);
+  border-bottom: 1px solid rgb(251 191 36 / .8);
+  animation: spv-scan 10s ease-in-out infinite;
+}
+@keyframes spv-scan {
+  0% { transform: translateY(-2rem); opacity: 0; }
+  4% { opacity: 1; }
+  38% { transform: translateY(13rem); opacity: 1; }
+  42%, 100% { transform: translateY(13rem); opacity: 0; }
+}
+
+/* Plan-ahead tiles: the safe-to-spend number settles in; "Price up" tags pulse. */
+.spv-pop { animation: spv-pop .8s cubic-bezier(.2,.8,.2,1) .2s both; }
+@keyframes spv-pop { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
+.spv-flag { animation: spv-live 1.8s ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   .spv-shimmer, .spv-float, .spv-row, .spv-pipe, .spv-marquee-track, .spv-dash,
   .spv-caret, .spv-tick, .spv-ring-border, .spv-btn-shine::after, .spv-sheen::after, .spv-live {
@@ -165,4 +202,8 @@
   .spv-tick { opacity: 1; }
   .spv-marquee-track { flex-wrap: wrap; width: auto; justify-content: center; }
   .spv-marquee-track > [aria-hidden] { display: none; }
+  .spv-cycle, .spv-pop { animation: none; opacity: 1; transform: none; }
+  .spv-fill { animation: none; transform: none; }
+  .spv-scan { display: none; }
+  .spv-flag { animation: none; }
 }
