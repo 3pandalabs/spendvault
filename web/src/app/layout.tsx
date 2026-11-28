@@ -8,9 +8,9 @@ import { SITE_URL } from "@/lib/site";
 // Titles and share tags follow 3pandalabs/brand brand.md "Consistency rules":
 // home = "<App> — <line> | by 3PandaLabs", other pages = "<Page> — SpendVault",
 // og:image = the 1200x630 card generated from brand/og (public/og.png).
-const TITLE = "SpendVault — Every card and bank account, one spending dashboard | by 3PandaLabs";
+const TITLE = "SpendVault — Every card, every receipt, down to the line item | by 3PandaLabs";
 const DESCRIPTION =
-  "Forward your bank and credit-card statements and see where your money goes. SpendVault flags spending spikes, finds forgotten subscriptions and fees, and never asks for your bank login.";
+  "Forward statements, purchase alerts and receipts and see where your money goes, down to the line item. SpendVault tracks subscriptions, flags hidden fees, shows what's safe to spend, and never asks for your bank login.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
