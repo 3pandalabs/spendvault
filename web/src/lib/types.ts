@@ -56,6 +56,29 @@ export type Me = User & {
   llmEnabled: boolean;
   features?: { household: boolean };
   household?: { id: string; name: string; memberCount: number } | null;
+  /** Effective plan: always "plus" while billing is off. */
+  plan?: Plan;
+  billing?: BillingState;
+};
+
+export type Plan = "free" | "plus";
+export type PlusFeature = "ask" | "household" | "digests" | "unlimited_budgets" | "unlimited_goals" | "tax_export" | "price_tracker";
+export type BillingState = {
+  enabled: boolean;
+  status: string | null;
+  interval: "month" | "year" | null;
+  renewsAt: string | null;
+  cancelAtPeriodEnd: boolean;
+  hasCustomer: boolean;
+  features: Record<PlusFeature, boolean>;
+  limits: { budgets: number | null; goals: number | null };
+};
+export type BillingPlans = {
+  enabled: boolean;
+  prices: Record<"USD" | "INR", { month: number; year: number }>;
+  features: Array<{ key: PlusFeature; label: string; plan: Plan }>;
+  freeCore: string[];
+  freeLimits: { budgets: number; goals: number };
 };
 
 export type MePatch = {
@@ -153,7 +176,7 @@ export type Account = {
   id: string;
   institution: string;
   institutionName: string;
-  kind: AccountKind | "unknown";
+  kind: AccountKind | "cash" | "unknown";
   last4: string;
   label: string | null;
   currency: string;
@@ -175,7 +198,7 @@ export type Transaction = {
   amount: number;
   direction: Direction;
   currency: string;
-  sourceKind: "statement" | "alert" | "csv";
+  sourceKind: "statement" | "alert" | "csv" | "manual";
   categoryLocked: boolean;
   receiptId: string | null;
   tags?: string[];
@@ -313,7 +336,14 @@ export type BudgetLine = {
   remaining: number;
   progress: number;
   status: "ok" | "near" | "over";
+  /** Carried in from earlier months (+ unspent, − overspent). */
+  rolledOver: number;
+  /** budget + rolledOver */
+  available: number;
+  rollover: Rollover;
 };
+
+export type Rollover = { unspent: boolean; overspend: boolean; since: string | null };
 
 export type Budgets = {
   month: string;
@@ -321,6 +351,8 @@ export type Budgets = {
   monthlyBudget: number | null;
   totals: { budgeted: number; spent: number; spentInBudgeted: number };
   items: BudgetLine[];
+  overall?: { rolledOver: number; available: number | null; remaining: number | null; status: "ok" | "near" | "over" | null; rollover: Rollover };
+  currentMonth?: string;
   suggestions: Array<{ category: CategoryKey; label: string; suggested: number; average: number }>;
 };
 
@@ -544,7 +576,32 @@ export type Goal = {
 
 export type AskTurn = { role: "user" | "assistant"; text: string };
 export type AskAnswer = { answer: string; toolsUsed: string[]; usage: { used: number; limit: number } };
-export type AskUsage = { available: boolean; used: number; limit: number };
+export type AskUsage = { available: boolean; used: number; limit: number; allowed?: boolean };
+
+export type ManualTransactionInput = {
+  postedOn: string;
+  amount: number;
+  merchant: string;
+  direction?: "debit" | "credit";
+  category?: CategoryKey;
+  accountId?: string | null;
+  note?: string | null;
+  tags?: string[];
+};
+
+export type CalculatorKey = "fire" | "compound" | "loan" | "card_payoff" | "emergency" | "retirement" | "inflation" | "savings_goal";
+export type CalculatorPrefill = {
+  currency: Currency;
+  months: string[];
+  avgMonthlySpend: number;
+  avgMonthlyEssentialSpend: number;
+  avgMonthlyIncome: number;
+  netWorth: number | null;
+  cards: Array<{ accountId: string; label: string; balance: number; minimumDue: number | null }>;
+  goals: Array<{ id: string; name: string; targetAmount: number; targetDate: string | null; saved: number }>;
+};
+export type ScenarioInputs = Record<string, number | string | boolean | null | Array<Record<string, number | string | boolean | null>>>;
+export type CalculatorScenario = { calculator: CalculatorKey; inputs: ScenarioInputs; updatedAt: string };
 
 export const TAX_TAGS = [
   { tag: "tax-deductible", label: "Tax deductible" },

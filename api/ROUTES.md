@@ -30,14 +30,18 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
     setup: { hasDocuments: boolean, hasPasswords: boolean, forwardingConfirmed: boolean },
     llmEnabled: boolean,
     features: { household: boolean },     // HOUSEHOLD_ENABLED (on unless "false")
-    household: { id, name, memberCount }|null
+    household: { id, name, memberCount }|null,
+    plan: "free"|"plus",                   // effective plan: always "plus" while BILLING=off (0004)
+    billing: { enabled: boolean, status: string|null, interval: "month"|"year"|null, renewsAt: string|null,
+      cancelAtPeriodEnd: boolean, hasCustomer: boolean,
+      features: Record<PlusFeature, boolean>, limits: { budgets: number|null, goals: number|null } }
   }
   ```
 - `PATCH /me` `{ displayName?, alertEmails?, deleteOriginals?, baseCurrency? ("USD"|"INR"), monthlyBudget?: number|null, timezone?: string|null, digestWeekly?: boolean, digestMonthly?: boolean }` → `Me` (`monthlyBudget` 0/null clears it; an unknown `timezone` → 400)
-- `DELETE /me` `{ password }` → 204. Leaves any household first, then deletes the user and ALL their data (cascade). 401 `invalid_credentials`.
-- `GET /me/export` → `{ transactions: Transaction[], accounts: Account[], alerts: Alert[], receipts: Array<Receipt & { items: ReceiptItem[] }>, splits, refunds, goals, categoryRules }` (JSON download of everything parsed)
+- `DELETE /me` `{ password }` → 204. Cancels any Stripe subscription (best effort), leaves any household, then deletes the user and ALL their data (cascade). 401 `invalid_credentials`.
+- `GET /me/export` → `{ transactions: Transaction[], accounts: Account[], alerts: Alert[], receipts: Array<Receipt & { items: ReceiptItem[] }>, splits, refunds, goals, categoryRules, calculatorScenarios }` (JSON download of everything parsed; always free)
 - `GET /me/export/transactions.csv` → `text/csv` (UTF-8 BOM, CRLF): `date, merchant, description, category, amount, direction, signed_amount, currency, account, source, tags, note, receipt_id, transaction_id` (non-superseded, newest first). Text cells starting with `= + - @` get a leading `'` (no formula injection).
-- `GET /me/export/tax.csv?year=YYYY&tag=` → `text/csv`: `type (transaction|receipt_item), date, merchant, description, category, amount, currency, tax_tags, note, transaction_id, receipt_id` for the year's transactions and receipt items carrying a tax tag (`tax-deductible`, `business`, `hsa-fsa`; `tag` narrows to one, 400 `invalid_tag` otherwise). Credits are negative.
+- `GET /me/export/tax.csv?year=YYYY&tag=` (**Plus**) → `text/csv`: `type (transaction|receipt_item), date, merchant, description, category, amount, currency, tax_tags, note, transaction_id, receipt_id` for the year's transactions and receipt items carrying a tax tag (`tax-deductible`, `business`, `hsa-fsa`; `tag` narrows to one, 400 `invalid_tag` otherwise). Credits are negative.
 - `GET /me/export/receipt-items.csv` → `text/csv`: `purchase_date, merchant, item, quantity, unit_price, line_total, category, receipt_total, currency, receipt_id, transaction_id`
   (all four exports share one limiter: 10/hour)
 - `GET /setup/forwarding` →
@@ -76,21 +80,34 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
 - `POST /documents/:id/retry` `{ password?: string, savePassword?: boolean }` → 202 `Document` (requires `hasOriginal`; 409 `original_deleted` otherwise)
 - `DELETE /documents/:id?deleteTransactions=true|false` (default true) → 204
 
+## SpendVault Plus (0004)
+Billing is behind `BILLING` (default `off`). Off → every user is effectively Plus, nothing is gated, and the checkout/portal routes answer 409 `billing_off`. The free/Plus split is ONE map in `src/lib/plan.ts`:
+`PlusFeature = "ask"|"household"|"digests"|"unlimited_budgets"|"unlimited_goals"|"tax_export"|"price_tracker"`. Free keeps forwarding, uploads, categories, the dashboard, alerts, receipts, manual cash spends, rollover, calculators and every export except the tax CSV; free caps: 3 category budgets, 1 goal.
+A gated call answers **402** `{ error: "plus_required", code: "PLUS_REQUIRED", feature }`: `POST /ask`, `GET /receipts/prices`, `GET /me/export/tax.csv`, `POST /household/invites` (joining stays free), `scope=household` on `/dashboard` + `/transactions` (needs any Plus member in the household), a 4th `PUT /budgets/:category` (editing an existing one is fine), a 2nd `POST /goals`. Weekly/monthly digests are skipped for free users. `GET /ask/usage` adds `allowed: boolean`.
+Plus = Stripe status `active`, `trialing` or `past_due` (and not > 3 days past `renewsAt`). Stripe TEST keys only (`sk_test_`/`rk_test_`) unless `STRIPE_ALLOW_LIVE=true`.
+- `GET /billing/plans` (public) → `{ enabled, prices: { USD: { month: 3, year: 29 }, INR: { month: 79, year: 599 } }, features: Array<{ key, label, plan }>, freeCore: string[], freeLimits: { budgets, goals } }`
+- `POST /billing/checkout` `{ interval: "month"|"year" }` → `{ url }` (Stripe Checkout, subscription mode, price `STRIPE_PRICE_<USD|INR>_<MONTH|YEAR>` by base currency; returns to `WEB_ORIGIN/plan?status=success|cancelled`). 409 `billing_off` / `already_plus`; 503 `billing_unavailable` (keys or price id missing); 502 `billing_failed`; 10/hour.
+- `POST /billing/portal` → `{ url }` (Stripe Customer Portal: change plan, card, cancel). 409 `billing_off` / `no_subscription`; 503 `billing_unavailable`.
+- `POST /webhooks/stripe` (raw body, `Stripe-Signature` HMAC with `STRIPE_WEBHOOK_SECRET`, 5-minute tolerance) → 400 `invalid_signature`; otherwise 200. Handles `checkout.session.completed`, `customer.subscription.created|updated|deleted` with `metadata.app = "spendvault"` (other apps' events on the shared account → 200 `{ ignored }`). Idempotent: the event id is claimed in `stripe_events` in the same transaction as its effect (a redelivery → `outcome: "duplicate"`); events older than the last applied one (`users.plan_event_at`) don't change the plan (`stale`). The user comes from `metadata.user_id`/`client_reference_id` (uuid only), else `stripe_customer_id`.
+
 ## Accounts
 - `GET /accounts` → `{ items: Account[] }`
-  `Account = { id, institution, institutionName, kind: "credit_card"|"bank"|"unknown", last4, label: string|null, currency, includeInNetWorth: boolean, txnCount, lastTxnOn: string|null }`
+  `Account = { id, institution, institutionName, kind: "credit_card"|"bank"|"cash"|"unknown", last4, label: string|null, currency, includeInNetWorth: boolean, txnCount, lastTxnOn: string|null }`
 - `PATCH /accounts/:id` `{ label?: string|null, includeInNetWorth?: boolean }` → `Account`
 
 ## Transactions
-- `GET /transactions?from=&to=&category=&accountId=&documentId=&q=&tag=&direction=&scope=me|household&member=all|<userId>&limit=100&cursor=` (`q` matches merchant, description and note; `tag` = one tag) → `{ items: Transaction[], nextCursor: string|null }` (newest `postedOn` first; superseded rows excluded). `scope=household` reads every household member's rows (or `member`'s; 404 if not a member) and adds `ownerId` to each item; other members' rows stay read-only (PATCH/detail → 404).
+- `GET /transactions?from=&to=&category=&accountId=&documentId=&q=&tag=&direction=&source=statement|alert|csv|manual&scope=me|household&member=all|<userId>&limit=100&cursor=` (`q` matches merchant, description and note; `tag` = one tag) → `{ items: Transaction[], nextCursor: string|null }` (newest `postedOn` first; superseded rows excluded). `scope=household` reads every household member's rows (or `member`'s; 404 if not a member) and adds `ownerId` to each item; other members' rows stay read-only (PATCH/detail → 404).
   ```
   Transaction = { id, accountId: string|null, documentId: string|null, postedOn, descriptionRaw, merchant, category,
-    amount: number, direction: "debit"|"credit", currency, sourceKind: "statement"|"alert"|"csv", categoryLocked: boolean,
+    amount: number, direction: "debit"|"credit", currency, sourceKind: "statement"|"alert"|"csv"|"manual", categoryLocked: boolean,
     receiptId: string|null,                                               // the linked receipt, if any
     tags: string[], note: string|null, hasSplit: boolean }
   ```
 - `GET /transactions/:id` → `Transaction & { receipt: ReceiptDetail|null, splits: SplitPart[], refund: RefundWatch|null }` (transaction detail view with the receipt's line items)
-- `PATCH /transactions/:id` `{ category?, applyToMerchant?: boolean, tags?: string[], note?: string|null }` (at least one) → `Transaction`. `applyToMerchant` upserts a category rule and recategorizes all of this user's unlocked transactions with that merchant (past and future). Tags are normalized (lowercase, `a-z0-9-_`, ≤ 30 chars, ≤ 10); notes ≤ 500 chars, empty clears.
+- `PATCH /transactions/:id` `{ category?, applyToMerchant?: boolean, tags?: string[], note?: string|null, postedOn?, amount?, merchant?, direction?, accountId?: string|null }` (at least one) → `Transaction`. `postedOn`/`amount`/`merchant`/`direction`/`accountId` edit manual rows only (409 `not_manual`; same validation as POST). `applyToMerchant` upserts a category rule and recategorizes all of this user's unlocked transactions with that merchant (past and future). Tags are normalized (lowercase, `a-z0-9-_`, ≤ 30 chars, ≤ 10); notes ≤ 500 chars, empty clears.
+- `POST /transactions` `{ postedOn, amount > 0, merchant, direction? = "debit", category?, accountId?: string|null, note?, tags? }` → 201 `Transaction` with `sourceKind: "manual"` (0005, "Add cash spend"). `accountId` null/omitted → the caller's **Cash** account (`institution: "cash", kind: "cash", label: "Cash"`, created on first use, not in net worth); otherwise one of the caller's accounts (404 if not). No `category` → the user's merchant rule, else the built-in map, else `other` (credits `income`); a given category is locked. 400 `invalid_date` (not a real day, before 2000, or more than a day after the user's today) / `merchant_required`. Writes recompute alerts and re-run receipt matching in the background.
+  Manual rows count everywhere spend counts (dashboard, budgets, alerts, safe to spend, exports with `source = manual`) but: statement superseding never targets or uses them (only `alert` rows get superseded, only `statement`/`csv` rows cover them), their `manual:<uuid>` fingerprint never collides with a statement line, deleting a statement never deletes them (no `documentId`), and the duplicate-charge detector skips them (`lib/manualTxn.ts`).
+- `DELETE /transactions/:id` → 204, manual rows only (409 `not_manual`: delete the statement instead)
 - `PUT /transactions/:id/splits` `{ parts: SplitPart[] }` → `{ parts }`. `SplitPart = { category, amount }`; 2–10 parts in ≥ 2 categories, each > 0, summing to the amount (±$0.01); `[]` clears. 400 `split_must_add_up` / `split_needs_2_to_10_parts` / `split_needs_2_categories` / `invalid_category` / `split_debits_only`. Splits feed `GET /dashboard` category views (byCategory, trend) like receipt item splits, and win over them; budgets and alerts keep whole transactions.
 - `DELETE /transactions/:id/splits` → 204
 - `GET /tags` → `{ items: Array<{ tag, count }> }` (the caller's tags, most used first)
@@ -157,13 +174,17 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
   Active recurring charges (same merchant, regular interval, similar amount; `lib/insights/recurring.ts`) in subscription-like categories, biggest monthly cost first. `nextExpectedOn` = last charge + one cadence step (monthly keeps the day of month). `isNew` = first charge ≤ 75 days ago.
 
 ## Budgets
-`BudgetLine = { category, label, budget, spent, remaining, progress, status: "ok"|"near"|"over" }` (near ≥ 80%; spent uses the dashboard rules)
+`BudgetLine = { category, label, budget, spent, remaining, progress, status: "ok"|"near"|"over", rolledOver, available, rollover: Rollover }` (near ≥ 80%; spent uses the dashboard rules; `available = budget + rolledOver` and `remaining`/`progress`/`status` measure against it)
+`Rollover = { unspent: boolean, overspend: boolean, since: "YYYY-MM"|null }`
 - `GET /budgets?month=YYYY-MM` (default current) →
-  `{ month, currency, monthlyBudget: number|null, totals: { budgeted, spent, spentInBudgeted }, items: BudgetLine[], suggestions: Array<{ category, label, suggested, average }> }`
+  `{ month, currency, monthlyBudget: number|null, totals: { budgeted, spent, spentInBudgeted }, items: BudgetLine[], overall: { rolledOver, available: number|null, remaining: number|null, status: "ok"|"near"|"over"|null, rollover: Rollover }, currentMonth, suggestions: Array<{ category, label, suggested, average }> }`
+  Rollover (0005, `insights/budgets.ts`): from `since` (the user's month when it was switched on; carry 0 that month), each month's leftover = budget + carry − real spend; a positive leftover carries when `unspent` is on, a negative one when `overspend` is on, otherwise the carry resets to 0. At most the last 12 months count; today's budget amount is used for every month. Over-budget alerts use `available`.
   Suggestions: average of the last 3 complete months with data, rounded up ($5/$25/$100, ₹50/₹500/₹1,000), for spend categories without a budget averaging ≥ $5 / ₹200 (fees excluded).
 - `PUT /budgets/:category` `{ amount }` → the `GET /budgets` body for the current month (400 `invalid_category` for unknown or NON_SPEND categories)
 - `DELETE /budgets/:category` → 204
+- `PUT /budgets/:category/rollover` `{ unspent: boolean, overspend: boolean }` → the `GET /budgets` body (404 without that budget). Switching on from fully off sets `since` to the current month in the user's time zone; staying on keeps it; both off clears it.
 - `PUT /budgets-total` `{ amount: number|null }` → the `GET /budgets` body (overall monthly budget; 0/null clears)
+- `PUT /budgets-total/rollover` `{ unspent, overspend }` → the `GET /budgets` body (same rules, for the overall monthly budget)
   Budget writes recompute alerts in the background.
 
 ## Net worth
@@ -249,6 +270,13 @@ ReturnWindow = { source: "typical"|"custom"|null, policyName: string|null, days:
 - `POST /receipts/:id/extract` → 202 `ReceiptDetail` (re-run AI extraction); 503 `llm_unavailable`; 409 `original_deleted`
 - `POST /receipts/rematch` → `{ matched: number }` (rate limited)
 - `DELETE /receipts/:id` → 204 (deletes the document, the receipt and its items; the transaction stays)
+
+## Calculators (0005)
+The math runs in the browser (`web/src/lib/calc.ts`, public `/calculators` and signed-in `/my-calculators`). The API only pre-fills and keeps optional saved inputs.
+- `GET /calculators/prefill` → `{ currency, months: string[], avgMonthlySpend, avgMonthlyEssentialSpend, avgMonthlyIncome, netWorth: number|null, cards: Array<{ accountId, label, balance, minimumDue }>, goals: Array<{ id, name, targetAmount, targetDate, saved }> }` (averages over the last 3 complete months with data, dashboard spend rules; essential = `CATEGORIES[*].essential`; cards = latest statement balance > 0 in the base currency; `insights/prefill.ts`)
+- `GET /calculator-scenarios` → `{ items: Array<{ calculator, inputs, updatedAt }> }`
+- `PUT /calculator-scenarios/:calculator` `{ inputs }` → `{ calculator, inputs, updatedAt }` (one per calculator: `fire|compound|loan|card_payoff|emergency|retirement|inflation|savings_goal`; inputs = ≤ 40 keys of numbers/short strings/booleans or a list of such maps, ≤ 8 KB)
+- `DELETE /calculator-scenarios/:calculator` → 204
 
 ## WhatsApp
 - `POST /whatsapp/link` → `{ code: "LINK-XXXXXX", expiresAt, number: string|null }` (503 `whatsapp_unavailable` if not configured). The user sends the code from their WhatsApp to our number.

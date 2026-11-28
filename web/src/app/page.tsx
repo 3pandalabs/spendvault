@@ -1,5 +1,8 @@
 import {
   ArrowRight,
+  Banknote,
+  Calculator,
+  Repeat,
   BadgeCheck,
   Bell,
   BellRing,
@@ -145,6 +148,9 @@ const FEATURES = [
   { icon: PiggyBank, t: "Savings goals", b: "Set a target and a date and see how much to put aside each month." },
   { icon: Mail, t: "Weekly or monthly summary", b: "An optional email with what you spent, your top categories, new subscriptions and card payments coming up." },
   { icon: FileText, t: "Tax tags", b: "Tag charges and receipt items as tax-deductible, business or HSA/FSA eligible, then export the year as a CSV." },
+  { icon: Banknote, t: "Cash spends", b: "Paid in cash? Add it in a few taps and it counts in your budgets and dashboard like everything else." },
+  { icon: Repeat, t: "Budget rollover", b: "Carry what you didn't spend into next month, and overspending too if you like, per category or overall." },
+  { icon: Calculator, t: "Calculators", b: "FIRE, SIP, loans, card payoff, emergency fund and retirement, filled in from your own numbers." },
 ];
 
 const PRIVACY = [

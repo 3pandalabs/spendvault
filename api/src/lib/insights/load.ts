@@ -7,6 +7,7 @@ import { accounts, alerts, budgets, documents, netWorthItems, transactions } fro
 import { institutionName } from "../institutions.js";
 import { num, toNum } from "../money.js";
 import type { Txn } from "./util.js";
+import type { BudgetInput, Rollover } from "./budgets.js";
 
 /** Non-superseded transactions of one currency, optionally bounded by date. */
 export async function loadTxns(userId: string, currency: string, from?: string, to?: string): Promise<Txn[]> {
@@ -79,11 +80,22 @@ export function alertView(a: AlertRow) {
   };
 }
 
-/** Category budgets (base currency). */
-export async function loadBudgets(userId: string): Promise<Array<{ category: string; amount: number }>> {
-  const rows = await db.select({ category: budgets.category, amount: budgets.amount }).from(budgets).where(eq(budgets.userId, userId));
-  return rows.map((r) => ({ category: r.category, amount: num(r.amount) }));
+/** Category budgets (base currency) with their rollover settings (0005). */
+export async function loadBudgets(userId: string): Promise<BudgetInput[]> {
+  const rows = await db.select().from(budgets).where(eq(budgets.userId, userId));
+  return rows.map((r) => ({
+    category: r.category,
+    amount: num(r.amount),
+    rollover: { unspent: r.rolloverUnspent, overspend: r.rolloverOverspend, since: r.rolloverSince },
+  }));
 }
+
+/** The overall monthly budget's rollover settings from a users row. */
+export const monthlyRolloverOf = (u: { budgetRolloverUnspent: boolean; budgetRolloverOverspend: boolean; budgetRolloverSince: string | null }): Rollover => ({
+  unspent: u.budgetRolloverUnspent,
+  overspend: u.budgetRolloverOverspend,
+  since: u.budgetRolloverSince,
+});
 
 /**
  * Accounts with the closing balance of their latest parsed statement (by

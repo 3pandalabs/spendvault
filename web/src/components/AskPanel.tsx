@@ -9,7 +9,8 @@ import { delay } from "@/components/app-ui";
 import { ErrorText, Panel, PanelTitle, Spinner } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ApiError, ask, errorMessage, getAskUsage } from "@/lib/api";
+import { ApiError, ask, errorMessage, getAskUsage, isPlusRequired } from "@/lib/api";
+import { PlusRequiredNote } from "./plus";
 import { useAsync } from "@/lib/hooks";
 import type { AskTurn } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,8 @@ export function AskPanel() {
   const [error, setError] = useState<string | null>(null);
   const [used, setUsed] = useState<number | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const [needsPlus, setNeedsPlus] = useState(false);
+  const locked = needsPlus || usage.data?.allowed === false;
 
   const limit = usage.data?.limit ?? 20;
   const usedNow = used ?? usage.data?.used ?? 0;
@@ -45,6 +48,7 @@ export function AskPanel() {
       setTurns((t) => t.slice(0, -1));
       setQ(text);
       if (e instanceof ApiError && e.status === 503) setUnavailable(true);
+      else if (isPlusRequired(e)) setNeedsPlus(true);
       else {
         if (e instanceof ApiError && e.code === "ask_limit_reached") setUsed(limit);
         setError(errorMessage(e));
@@ -56,13 +60,15 @@ export function AskPanel() {
 
   return (
     <Panel className="spa-in" style={delay(0.08)}>
-      <PanelTitle aside={!off && usage.data ? <span className="text-xs text-fg-muted tabular">{usedNow} of {limit} questions today</span> : null}>
+      <PanelTitle aside={!off && !locked && usage.data ? <span className="text-xs text-fg-muted tabular">{usedNow} of {limit} questions today</span> : null}>
         <span className="inline-flex items-center gap-2">
           <MessageCircleQuestion className="size-4 text-emerald-300" aria-hidden /> Ask SpendVault
         </span>
       </PanelTitle>
       {off ? (
         <p className="text-sm text-fg-muted">AI answers aren&apos;t switched on yet. Your dashboard, alerts and insights work without it.</p>
+      ) : locked ? (
+        <PlusRequiredNote feature="ask" />
       ) : (
         <>
           {turns.length ? (

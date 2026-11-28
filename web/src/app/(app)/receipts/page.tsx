@@ -9,7 +9,8 @@ import { CopyButton, EmptyState, ErrorText, LoadError, Loading, PageHeader, Pane
 import { AddReceiptButton, duplicateReceiptIds, ReceiptBadges, ReceiptDropZone } from "@/components/receipts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { errorMessage, getPriceTracks, getReturns, listReceipts, rematchReceipts } from "@/lib/api";
+import { errorMessage, getPriceTracks, getReturns, isPlusRequired, listReceipts, rematchReceipts } from "@/lib/api";
+import { PlusRequiredNote } from "@/components/plus";
 import { fmtDate, fmtDay, fmtTimestamp, moneyExact } from "@/lib/format";
 import { useAsync, usePoll } from "@/lib/hooks";
 import { useSession } from "@/lib/session";
@@ -347,7 +348,9 @@ function PricePanel() {
           <TrendingUp className="size-4 text-amber-300" aria-hidden /> Price tracker
         </span>
       </PanelTitle>
-      {res.error ? (
+      {res.error && isPlusRequired(res.error) ? (
+        <PlusRequiredNote feature="price_tracker" />
+      ) : res.error ? (
         <LoadError error={res.error} onRetry={res.reload} />
       ) : !res.data ? (
         <Skeleton className="h-24" />

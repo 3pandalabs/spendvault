@@ -4,7 +4,7 @@ import { and, eq, gte, isNull, lte, or } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { receiptItems, receipts } from "../../db/schema.js";
 import { num, toNum } from "../money.js";
-import { budgetLines } from "../insights/budgets.js";
+import { budgetLines, MAX_ROLLOVER_MONTHS } from "../insights/budgets.js";
 import { loadBudgets, loadTxns } from "../insights/load.js";
 import { computeSubscriptions } from "../insights/subscriptions.js";
 import { addDays, addMonths, monthEnd, monthStart } from "../insights/util.js";
@@ -45,7 +45,7 @@ export function askDataFor(userId: string, currency: string, today: string, mont
     },
     cardDues: () => loadCardDues(userId, today),
     async budgets(month) {
-      const [rows, txns] = await Promise.all([loadBudgets(userId), loadTxns(userId, currency, monthStart(addMonths(month, 0)), monthEnd(month))]);
+      const [rows, txns] = await Promise.all([loadBudgets(userId), loadTxns(userId, currency, monthStart(addMonths(month, -MAX_ROLLOVER_MONTHS)), monthEnd(month))]);
       return { month, monthlyBudget, items: budgetLines(txns, currency, month, rows) };
     },
     async goals() {

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { ReceiptPill } from "@/components/app-ui";
+import { CashPill, CashSpendForm } from "@/components/cash";
+import { Banknote } from "lucide-react";
 import { CategoryChip } from "@/components/bits";
 import { EmptyState, ErrorText, LoadError, Loading, PageHeader, Spinner, selectClass } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -53,7 +55,18 @@ function Transactions() {
     scope: params.get("scope") === "household" ? "household" : undefined,
     member: params.get("member") ?? undefined,
   };
-  const filterKey = params.toString();
+  // `add=cash` opens the "Add cash spend" form; it is not a filter.
+  const adding = params.get("add") === "cash";
+  const filterParams = new URLSearchParams(params.toString());
+  filterParams.delete("add");
+  const filterKey = filterParams.toString();
+
+  const setAdding = (on: boolean) => {
+    const next = new URLSearchParams(params.toString());
+    if (on) next.set("add", "cash");
+    else next.delete("add");
+    router.replace(`/transactions${next.toString() ? `?${next}` : ""}`, { scroll: false });
+  };
 
   const setFilter = (patch: Partial<Record<keyof TransactionFilter, string | undefined>>) => {
     const next = new URLSearchParams(params.toString());
@@ -111,8 +124,29 @@ function Transactions() {
       <PageHeader
         eyebrow="Transactions"
         title="Every charge, every card"
-        subtitle="Every line from your statements and purchase alerts. Fix a category and we'll remember it. Charges with a receipt show what was bought."
+        subtitle="Every line from your statements and purchase alerts, plus cash you add by hand. Fix a category and we'll remember it. Charges with a receipt show what was bought."
+        actions={
+          adding ? null : (
+            <Button variant="outline" onClick={() => setAdding(true)}>
+              <Banknote /> Add cash spend
+            </Button>
+          )
+        }
       />
+
+      {adding ? (
+        <section className="spa-tile spa-glow spa-in mb-4 rounded-2xl p-4 sm:p-5" aria-label="Add cash spend">
+          <h2 className="mb-3 text-base font-semibold">Add cash spend</h2>
+          <CashSpendForm
+            onDone={() => {
+              setAdding(false);
+              first.reload();
+              accounts.reload();
+            }}
+            onCancel={() => setAdding(false)}
+          />
+        </section>
+      ) : null}
 
       {/* Filters */}
       <div className="spa-tile spa-in mb-4 space-y-3 rounded-2xl p-3 sm:p-4">
@@ -383,6 +417,7 @@ function TxnRow({
                 <ReceiptPill />
               </Link>
             ) : null}
+            {t.sourceKind === "manual" ? <CashPill /> : null}
             {t.hasSplit ? (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-violet-400/30 bg-violet-400/10 px-1.5 py-px text-[10px] font-medium tracking-wide text-violet-200 uppercase" title="Split across categories">
                 <SplitSquareHorizontal className="size-3" aria-hidden /> Split

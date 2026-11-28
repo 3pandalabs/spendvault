@@ -46,6 +46,19 @@ export const users = pgTable("users", {
   digestMonthly: boolean("digest_monthly").notNull().default(true),
   lastWeeklyDigest: text("last_weekly_digest"), // week start YYYY-MM-DD last sent
   lastMonthlyDigest: text("last_monthly_digest"), // YYYY-MM last sent
+  // 0004: SpendVault Plus (lib/plan.ts). Only read when BILLING=on.
+  plan: text("plan").notNull().default("free"), // free | plus
+  planStatus: text("plan_status"), // Stripe subscription status
+  planInterval: text("plan_interval"), // month | year
+  planRenewsAt: timestamp("plan_renews_at", { withTimezone: true }),
+  planCancelAtPeriodEnd: boolean("plan_cancel_at_period_end").notNull().default(false),
+  planEventAt: timestamp("plan_event_at", { withTimezone: true }),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  // 0005: overall monthly budget rollover (see budgets.rollover_*).
+  budgetRolloverUnspent: boolean("budget_rollover_unspent").notNull().default(false),
+  budgetRolloverOverspend: boolean("budget_rollover_overspend").notNull().default(false),
+  budgetRolloverSince: text("budget_rollover_since"),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
@@ -175,7 +188,7 @@ export const transactions = pgTable(
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
     direction: text("direction").notNull(), // debit | credit
     currency: text("currency").notNull().default("INR"),
-    sourceKind: text("source_kind").notNull(), // statement | alert | csv
+    sourceKind: text("source_kind").notNull(), // statement | alert | csv | manual (0005, typed in by the user)
     fingerprint: text("fingerprint").notNull(),
     // An alert transaction later matched by a statement line points here and is
     // excluded from every total (WHERE superseded_by IS NULL).
@@ -320,6 +333,10 @@ export const budgets = pgTable(
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     category: text("category").notNull(),
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    // 0005: carry unspent (and/or overspent) money into next month, counted from `rolloverSince` (YYYY-MM).
+    rolloverUnspent: boolean("rollover_unspent").notNull().default(false),
+    rolloverOverspend: boolean("rollover_overspend").notNull().default(false),
+    rolloverSince: text("rollover_since"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: createdAt(),
   },
@@ -459,4 +476,30 @@ export const askUsage = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("ask_usage_user_created").on(t.userId, t.createdAt)],
+);
+
+// ---------------------------------------------------------------- Plus billing (0004)
+
+// Stripe webhook idempotency: one row per event id, written with its effect.
+export const stripeEvents = pgTable("stripe_events", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull(),
+  userId: uuid("user_id"),
+  createdAt: createdAt(),
+});
+
+// ---------------------------------------------------------------- calculators (0005)
+
+// Optional saved inputs for one calculator (results are recomputed client-side).
+export const calculatorScenarios = pgTable(
+  "calculator_scenarios",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    calculator: text("calculator").notNull(),
+    inputs: jsonb("inputs").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("calculator_scenarios_user_calc").on(t.userId, t.calculator)],
 );

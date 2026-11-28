@@ -8,7 +8,11 @@
 import type { AlertCandidate } from "./spikes.js";
 import { addMonths, categoryLabel, formatMoney, monthLabel, monthOf, monthStart, round2, spendEntries, threshold, usable, type Txn } from "./util.js";
 
-export type BudgetInput = { category: string; amount: number };
+/** Rollover settings (0005). `since` = first month (YYYY-MM) whose leftover carries; null = off. */
+export type Rollover = { unspent: boolean; overspend: boolean; since: string | null };
+export const NO_ROLLOVER: Rollover = { unspent: false, overspend: false, since: null };
+
+export type BudgetInput = { category: string; amount: number; rollover?: Rollover };
 export type BudgetStatus = "ok" | "near" | "over";
 
 export type BudgetLine = {
@@ -19,6 +23,11 @@ export type BudgetLine = {
   remaining: number; // may be negative
   progress: number; // spent / budget (0 when budget is 0)
   status: BudgetStatus;
+  /** Carried in from earlier months (+ unspent, - overspent); 0 without rollover. */
+  rolledOver: number;
+  /** budget + rolledOver: what this month's bar measures against. */
+  available: number;
+  rollover: Rollover;
 };
 
 export type BudgetSuggestion = { category: string; label: string; suggested: number; average: number };
@@ -43,20 +52,74 @@ export function categorySpend(txns: readonly Txn[], currency: string, month: str
   return m;
 }
 
+/** Longest look-back for a rollover chain (older months simply stop counting). */
+export const MAX_ROLLOVER_MONTHS = 12;
+
+/** The month rollover counting starts from for `month` (capped look-back), or null when off. */
+export const rolloverFrom = (r: Rollover | undefined, month: string): string | null => {
+  if (!r?.since || (!r.unspent && !r.overspend)) return null;
+  const floor = addMonths(month, -MAX_ROLLOVER_MONTHS);
+  return r.since < floor ? floor : r.since;
+};
+
+/**
+ * Money carried INTO `month`. Starting at `since` (the month rollover was
+ * switched on, carry 0), each month's leftover = budget + carry - real spend.
+ * A positive leftover carries when `unspent` is on, a negative one when
+ * `overspend` is on; otherwise the carry resets to 0. Months before `since`
+ * never count. Uses today's budget amount for every month (no amount history).
+ */
+export function rolloverCarry(budget: number, month: string, r: Rollover | undefined, spentIn: (m: string) => number): number {
+  const from = rolloverFrom(r, month);
+  if (!r || !from || month <= from) return 0;
+  let carry = 0;
+  for (let m = from; m < month; m = addMonths(m, 1)) {
+    const left = round2(budget + carry - spentIn(m));
+    carry = left >= 0 ? (r.unspent ? left : 0) : r.overspend ? left : 0;
+  }
+  return round2(carry);
+}
+
+/**
+ * Rollover toggles changed: switching on from fully off starts counting at
+ * `currentMonth` (the user's month, lib/userTime.ts); staying on keeps the
+ * original start; switching both off clears it.
+ */
+export function nextRollover(prev: Rollover, next: { unspent: boolean; overspend: boolean }, currentMonth: string): Rollover {
+  if (!next.unspent && !next.overspend) return { ...NO_ROLLOVER };
+  const wasOn = Boolean((prev.unspent || prev.overspend) && prev.since);
+  return { unspent: next.unspent, overspend: next.overspend, since: wasOn ? prev.since : currentMonth };
+}
+
+function lineFor(category: string, amount: number, spent: number, rolledOver: number, rollover: Rollover): BudgetLine {
+  const available = round2(amount + rolledOver);
+  return {
+    category,
+    label: categoryLabel(category),
+    budget: round2(amount),
+    spent,
+    remaining: round2(available - spent),
+    progress: available > 0 ? round2(spent / available) : spent > 0 ? 1 : 0,
+    status: available > 0 ? statusOf(spent, available) : spent > 0.004 ? "over" : "ok",
+    rolledOver,
+    available,
+    rollover,
+  };
+}
+
 export function budgetLines(txns: readonly Txn[], currency: string, month: string, budgets: readonly BudgetInput[]): BudgetLine[] {
   const spend = categorySpend(txns, currency, month);
+  const byMonth = new Map<string, Map<string, number>>();
+  const spentIn = (cat: string) => (m: string) => {
+    let s = byMonth.get(m);
+    if (!s) byMonth.set(m, (s = categorySpend(txns, currency, m)));
+    return s.get(cat) ?? 0;
+  };
   return budgets
     .map((b) => {
       const spent = spend.get(b.category) ?? 0;
-      return {
-        category: b.category,
-        label: categoryLabel(b.category),
-        budget: round2(b.amount),
-        spent,
-        remaining: round2(b.amount - spent),
-        progress: b.amount > 0 ? round2(spent / b.amount) : 0,
-        status: statusOf(spent, b.amount),
-      };
+      const rollover = b.rollover ?? NO_ROLLOVER;
+      return lineFor(b.category, b.amount, spent, rolloverCarry(b.amount, month, rollover, spentIn(b.category)), rollover);
     })
     .sort((a, b) => b.progress - a.progress || b.spent - a.spent || a.category.localeCompare(b.category));
 }
@@ -64,6 +127,14 @@ export function budgetLines(txns: readonly Txn[], currency: string, month: strin
 /** Total spend in `month` (sum of the floored category totals). */
 export const totalSpend = (txns: readonly Txn[], currency: string, month: string) =>
   round2([...categorySpend(txns, currency, month).values()].reduce((s, v) => s + v, 0));
+
+/** The overall monthly budget with its rollover (null when no overall budget is set). */
+export function overallBudgetLine(txns: readonly Txn[], currency: string, month: string, monthlyBudget: number | null | undefined, rollover?: Rollover): BudgetLine | null {
+  if (!monthlyBudget || monthlyBudget <= 0) return null;
+  const r = rollover ?? NO_ROLLOVER;
+  const carry = rolloverCarry(monthlyBudget, month, r, (m) => totalSpend(txns, currency, m));
+  return { ...lineFor("total", monthlyBudget, totalSpend(txns, currency, month), carry, r), label: "Monthly budget" };
+}
 
 /** Round a suggestion UP to a friendly step: $5/$25/$100, ₹50/₹500/₹1,000. */
 export function niceCeil(n: number, currency: string): number {
@@ -108,6 +179,7 @@ export function budgetAlerts(opts: {
   today: string;
   budgets: readonly BudgetInput[];
   monthlyBudget?: number | null;
+  monthlyRollover?: Rollover;
 }): AlertCandidate[] {
   const { currency, today } = opts;
   const fmt = (n: number) => formatMoney(n, currency);
@@ -117,31 +189,31 @@ export function budgetAlerts(opts: {
     for (const l of budgetLines(opts.txns, currency, month, opts.budgets)) {
       if (l.status !== "over" || l.budget <= 0) continue;
       const label = l.label.toLowerCase();
+      const what = l.rolledOver !== 0 ? `${fmt(l.available)} budget (with rollover)` : `${fmt(l.budget)} budget`;
       out.push({
         kind: "over_budget",
         dedupeKey: `over_budget:${l.category}:${month}`,
         title: `Over your ${label} budget`,
-        body: `You've spent ${fmt(l.spent)} on ${label} in ${monthLabel(month)}, ${fmt(l.spent - l.budget)} over your ${fmt(l.budget)} budget.`,
+        body: `You've spent ${fmt(l.spent)} on ${label} in ${monthLabel(month)}, ${fmt(l.spent - l.available)} over your ${what}.`,
         category: l.category,
         amount: l.spent,
-        baseline: l.budget,
+        baseline: l.available,
         periodStart: monthStart(month),
       });
     }
-    const mb = opts.monthlyBudget ?? null;
-    if (mb && mb > 0) {
-      const spent = totalSpend(opts.txns, currency, month);
-      if (spent > mb + 0.004) {
-        out.push({
-          kind: "over_budget",
-          dedupeKey: `over_budget:total:${month}`,
-          title: `Over your monthly budget`,
-          body: `You've spent ${fmt(spent)} in ${monthLabel(month)}, ${fmt(spent - mb)} over your ${fmt(mb)} monthly budget.`,
-          amount: spent,
-          baseline: round2(mb),
-          periodStart: monthStart(month),
-        });
-      }
+    const total = overallBudgetLine(opts.txns, currency, month, opts.monthlyBudget, opts.monthlyRollover);
+    if (total && total.status === "over") {
+      const spent = total.spent;
+      const mb = total.available;
+      out.push({
+        kind: "over_budget",
+        dedupeKey: `over_budget:total:${month}`,
+        title: `Over your monthly budget`,
+        body: `You've spent ${fmt(spent)} in ${monthLabel(month)}, ${fmt(spent - mb)} over your ${fmt(mb)} monthly budget${total.rolledOver !== 0 ? " (with rollover)" : ""}.`,
+        amount: spent,
+        baseline: round2(mb),
+        periodStart: monthStart(month),
+      });
     }
   }
   return out;

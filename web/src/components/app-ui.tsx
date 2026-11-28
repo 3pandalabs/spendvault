@@ -64,11 +64,13 @@ export const INSIGHT_TABS = [
   { href: "/subscriptions", label: "Subscriptions" },
   { href: "/budgets", label: "Budgets" },
   { href: "/goals", label: "Goals" },
+  { href: "/my-calculators", label: "Calculators" },
 ];
 export const ACCOUNT_TABS = [
   { href: "/setup", label: "Setup" },
   { href: "/settings", label: "Settings" },
   { href: "/household", label: "Household" },
+  { href: "/plan", label: "Plan" },
 ];
 
 /**

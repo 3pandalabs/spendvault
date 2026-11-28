@@ -8,6 +8,7 @@ import { Eyebrow, ReceiptPill } from "@/components/app-ui";
 import { CategoryChip } from "@/components/bits";
 import { EmptyState, ErrorText, LoadError, Loading, Panel, PanelTitle, Spinner } from "@/components/common";
 import { RefundBox, SplitEditor, TagEditor } from "@/components/tools";
+import { ManualControls } from "@/components/cash";
 import { AddReceiptButton, ItemStrip, ReceiptBadges, ReceiptItemsTable, ReceiptSummaryLine } from "@/components/receipts";
 import { Button } from "@/components/ui/button";
 import { errorMessage, getTransaction, updateReceiptItem, updateTransaction } from "@/lib/api";
@@ -37,6 +38,7 @@ function View({ t, onChange }: { t: TransactionDetail; onChange: (t: Transaction
   const router = useRouter();
   const r = t.receipt;
   const credit = t.direction === "credit";
+  const manual = t.sourceKind === "manual";
   const source = t.sourceKind === "alert" ? "purchase alert" : t.sourceKind === "csv" ? "CSV export" : "statement";
   return (
     <>
@@ -65,9 +67,14 @@ function View({ t, onChange }: { t: TransactionDetail; onChange: (t: Transaction
         </div>
         <p className="mt-4 break-words text-sm text-fg-muted">{t.descriptionRaw}</p>
         <p className="mt-1 text-xs text-fg-muted">
-          From a {source}
+          {manual ? "Added by hand" : `From a ${source}`}
           {t.categoryLocked ? " · category set by you" : ""}
         </p>
+        {manual ? (
+          <div className="mt-4 border-t border-white/10 pt-4">
+            <ManualControls t={t} onChange={(n) => onChange({ ...t, ...n })} onDeleted={() => router.replace("/transactions")} />
+          </div>
+        ) : null}
       </section>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">

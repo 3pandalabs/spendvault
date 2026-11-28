@@ -108,7 +108,8 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
           safeToSpend = computeSafeToSpend({ txns: recentTxns, currency, today, recurring: detectRecurring(recentTxns, currency, today), monthlyBudget, categoryBudgetTotal });
         }
         if (budgetRows.length) {
-          const lines = budgetLines(txns, currency, month, budgetRows);
+          // Rollover needs earlier months: the 400-day window covers MAX_ROLLOVER_MONTHS.
+          const lines = budgetLines(recentTxns ?? txns, currency, month, budgetRows);
           budgetSummary = { count: lines.length, over: lines.filter((l) => l.status === "over").length, near: lines.filter((l) => l.status === "near").length, top: lines.slice(0, 3) };
         }
         const n = computeNetWorth({ currency, ...nw });

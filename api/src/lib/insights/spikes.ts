@@ -5,7 +5,7 @@
 import type { AlertKind } from "../../db/schema.js";
 import { classifyFee, feeShort, isFee, type FeeType } from "./fees.js";
 import { detectDuplicates } from "./fees.js";
-import { budgetAlerts, type BudgetInput } from "./budgets.js";
+import { budgetAlerts, type BudgetInput, type Rollover } from "./budgets.js";
 import { detectRecurring, isSubscriptionLike, type Recurring } from "./recurring.js";
 import { newSubscriptionAlerts } from "./subscriptions.js";
 import {
@@ -54,6 +54,7 @@ export type SpikeInput = {
   /** Category budgets and the overall monthly budget (over_budget alerts). */
   budgets?: readonly BudgetInput[];
   monthlyBudget?: number | null;
+  monthlyRollover?: Rollover;
 };
 
 /** Scheduled big payments: never a "daily spike" (rent day is not a surprise). */
@@ -74,7 +75,7 @@ export function detectSpikes(input: SpikeInput): AlertCandidate[] {
     ...feeAlerts(ctx),
     ...duplicateAlerts(ctx),
     ...newSubscriptionAlerts(ctx),
-    ...budgetAlerts({ txns, currency: input.currency, today: input.today, budgets: input.budgets ?? [], monthlyBudget: input.monthlyBudget }),
+    ...budgetAlerts({ txns, currency: input.currency, today: input.today, budgets: input.budgets ?? [], monthlyBudget: input.monthlyBudget, monthlyRollover: input.monthlyRollover }),
   ];
 }
 

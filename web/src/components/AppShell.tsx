@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Banknote,
   Camera,
   FileUp,
   Inbox,
@@ -45,12 +46,12 @@ const MAIN: NavItem[] = [
   { href: "/transactions", label: "Transactions", icon: ListOrdered },
   { href: "/receipts", label: "Receipts", icon: ReceiptText },
   { href: "/documents", label: "Inbox", icon: Inbox, also: ["/share"] },
-  { href: "/alerts", label: "Insights", icon: TrendingUp, also: ["/savings", "/subscriptions", "/budgets", "/goals"] },
+  { href: "/alerts", label: "Insights", icon: TrendingUp, also: ["/savings", "/subscriptions", "/budgets", "/goals", "/my-calculators"] },
   { href: "/net-worth", label: "Net worth", icon: Landmark },
 ];
 const ACCOUNT: NavItem[] = [
   { href: "/setup", label: "Setup", icon: Sparkles },
-  { href: "/settings", label: "Settings", icon: Settings, also: ["/household"] },
+  { href: "/settings", label: "Settings", icon: Settings, also: ["/household", "/plan"] },
 ];
 // Phones: four tabs + More (Inbox, Net worth, Setup, Settings live in the sheet).
 const TABS = [MAIN[0], MAIN[1], MAIN[2], MAIN[4]];
@@ -159,7 +160,7 @@ function Sidebar({ me, onAdd }: { me: Me | undefined; onAdd: () => void }) {
         onClick={onAdd}
         className="spa-shine mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-amber-400 text-sm font-semibold text-zinc-950 shadow-[0_10px_30px_-12px_rgba(251,191,36,.8)] hover:bg-amber-300"
       >
-        <Plus className="size-4" /> Add receipt or statement
+        <Plus className="size-4" /> Add receipt, cash or statement
       </button>
       <nav aria-label="Main" className="mt-6 flex flex-col gap-1">
         {MAIN.map((item) => (
@@ -331,6 +332,16 @@ function QuickAdd({ onClose }: { onClose: () => void }) {
       </div>
       {pick.inputs}
       <ErrorText>{error}</ErrorText>
+      <p className="mt-4 mb-2 font-mono text-[10px] tracking-[0.2em] text-amber-300/80 uppercase">Cash</p>
+      <Link href="/transactions?add=cash" className={row} onClick={onClose}>
+        <span className={cn(icon, "bg-amber-400/10 text-amber-300")}>
+          <Banknote className="size-5" />
+        </span>
+        <span className="min-w-0 text-sm">
+          <span className="font-medium">Add cash spend</span>
+          <span className="block text-xs text-fg-muted">Type in something you paid for in cash</span>
+        </span>
+      </Link>
       <p className="mt-4 mb-2 font-mono text-[10px] tracking-[0.2em] text-amber-300/80 uppercase">Statements</p>
       <div className="grid gap-2">
         <Link href="/documents" className={row} onClick={onClose}>

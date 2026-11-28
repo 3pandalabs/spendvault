@@ -8,6 +8,12 @@
 import type {
   Account,
   Alert,
+  BillingPlans,
+  CalculatorKey,
+  CalculatorPrefill,
+  CalculatorScenario,
+  ManualTransactionInput,
+  ScenarioInputs,
   AuthResponse,
   AskAnswer,
   AskTurn,
@@ -88,7 +94,19 @@ const MESSAGE_COPY: Record<string, string> = {
   ask_limit_reached: "That's today's 20 questions. Ask again tomorrow.",
   ask_failed: "Couldn't get an answer just now. Try again in a moment.",
   invalid_tag: "Pick one of the tax tags.",
+  plus_required: "That's part of SpendVault Plus. See Plan to upgrade.",
+  billing_off: "Paid plans aren't switched on yet. Everything is included for now.",
+  billing_unavailable: "Upgrading isn't available just yet. Try again later.",
+  billing_failed: "Couldn't reach the payment page. Try again in a moment.",
+  already_plus: "You're already on SpendVault Plus.",
+  no_subscription: "There's no subscription to manage yet.",
+  not_manual: "Only transactions you added by hand can be edited or deleted here.",
+  merchant_required: "Add where you spent it.",
+  invalid_date: "Pick a real date, up to today.",
 };
+
+/** The API said this needs SpendVault Plus (HTTP 402). */
+export const isPlusRequired = (e: unknown) => e instanceof ApiError && (e.status === 402 || e.code === "plus_required" || e.message === "plus_required");
 
 /** Human message for any thrown value. */
 export function errorMessage(e: unknown): string {
@@ -297,6 +315,9 @@ export const updateAccount = (id: string, label: string | null) =>
 export const setAccountInNetWorth = (id: string, includeInNetWorth: boolean) =>
   call<Account>(`/accounts/${enc(id)}`, { method: "PATCH", body: { includeInNetWorth } });
 export const listTransactions = (f: TransactionFilter = {}) => call<Page<Transaction>>(`/transactions${qs(f)}`);
+export const addManualTransaction = (b: ManualTransactionInput) => call<Transaction>("/transactions", { method: "POST", body: b });
+export const updateManualTransaction = (id: string, b: Partial<ManualTransactionInput>) => call<Transaction>(`/transactions/${enc(id)}`, { method: "PATCH", body: b });
+export const deleteManualTransaction = (id: string) => call<void>(`/transactions/${enc(id)}`, { method: "DELETE" });
 export const updateTransaction = (id: string, b: TransactionPatch) => call<Transaction>(`/transactions/${enc(id)}`, { method: "PATCH", body: b });
 export const setSplits = (id: string, parts: SplitPart[]) => call<{ parts: SplitPart[] }>(`/transactions/${enc(id)}/splits`, { method: "PUT", body: { parts } });
 export const clearSplits = (id: string) => call<void>(`/transactions/${enc(id)}/splits`, { method: "DELETE" });
@@ -359,6 +380,9 @@ export const getSubscriptions = () => call<Subscriptions>("/subscriptions");
 export const getBudgets = (month?: string) => call<Budgets>(`/budgets${qs({ month })}`);
 export const setBudget = (category: string, amount: number) => call<Budgets>(`/budgets/${enc(category)}`, { method: "PUT", body: { amount } });
 export const deleteBudget = (category: string) => call<void>(`/budgets/${enc(category)}`, { method: "DELETE" });
+export const setBudgetRollover = (category: string, r: { unspent: boolean; overspend: boolean }) =>
+  call<Budgets>(`/budgets/${enc(category)}/rollover`, { method: "PUT", body: r });
+export const setMonthlyRollover = (r: { unspent: boolean; overspend: boolean }) => call<Budgets>("/budgets-total/rollover", { method: "PUT", body: r });
 export const setMonthlyBudget = (amount: number | null) => call<Budgets>("/budgets-total", { method: "PUT", body: { amount } });
 export const getNetWorth = () => call<NetWorth>("/net-worth");
 export const addNetWorthItem = (b: Omit<NetWorthItem, "id" | "updatedAt">) => call<NetWorthItem>("/net-worth/items", { method: "POST", body: b });
@@ -416,6 +440,17 @@ export const getAskUsage = () => call<AskUsage>("/ask/usage");
 export const ask = (question: string, history: AskTurn[] = []) => call<AskAnswer>("/ask", { method: "POST", body: { question, history } });
 
 // ---- whatsapp ----
+
+// ---- SpendVault Plus + calculators (0004/0005) ----
+
+export const getBillingPlans = () => call<BillingPlans>("/billing/plans", { auth: false });
+export const startCheckout = (interval: "month" | "year") => call<{ url: string }>("/billing/checkout", { method: "POST", body: { interval } });
+export const openBillingPortal = () => call<{ url: string }>("/billing/portal", { method: "POST" });
+export const getCalculatorPrefill = () => call<CalculatorPrefill>("/calculators/prefill");
+export const listScenarios = () => call<{ items: CalculatorScenario[] }>("/calculator-scenarios");
+export const saveScenario = (calculator: CalculatorKey, inputs: ScenarioInputs) =>
+  call<CalculatorScenario>(`/calculator-scenarios/${enc(calculator)}`, { method: "PUT", body: { inputs } });
+export const deleteScenario = (calculator: CalculatorKey) => call<void>(`/calculator-scenarios/${enc(calculator)}`, { method: "DELETE" });
 
 export const linkWhatsapp = () => call<WhatsappLink>("/whatsapp/link", { method: "POST" });
 export const unlinkWhatsapp = () => call<void>("/whatsapp/link", { method: "DELETE" });

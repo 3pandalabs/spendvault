@@ -26,6 +26,8 @@ import { fingerprints, reconcile } from "./reconcile.js";
 import { parseStatementText } from "./statement.js";
 import { parseCsvBuffer, parseXlsBuffer, parseXlsxBuffer, UnsupportedFormatError } from "./tabular.js";
 import type { ParseResult } from "./types.js";
+// Manual cash rows (source_kind 'manual') are in neither list: superseding never touches them.
+import { COVERING_KINDS, SUPERSEDABLE_KINDS } from "../manualTxn.js";
 
 export type ProcessOptions = { password?: string; savePassword?: boolean };
 
@@ -169,12 +171,14 @@ const ACCOUNT_MATCH = (alias: string, accountId: string | null, institution: str
   OR ((a.institution = ${institution}::text OR a.institution = 'unknown' OR ${institution}::text = 'unknown')
       AND (a.last4 = '' OR ${last4}::text = '' OR a.last4 = ${last4}::text)))`;
 
+const kindList = (kinds: readonly string[]) => sql.join(kinds.map((k) => sql`${k}`), sql`, `);
+
 async function supersedeAlertFor(tx: DbOrTx, userId: string, stmt: { id: string; amount: string; direction: string; postedOn: string }, accountId: string | null, institution: string, last4: string) {
   await tx.execute(sql`
     UPDATE transactions SET superseded_by = ${stmt.id}
     WHERE id = (
       SELECT t.id FROM transactions t LEFT JOIN accounts a ON a.id = t.account_id
-      WHERE t.user_id = ${userId} AND t.source_kind = 'alert' AND t.superseded_by IS NULL
+      WHERE t.user_id = ${userId} AND t.source_kind IN (${kindList(SUPERSEDABLE_KINDS)}) AND t.superseded_by IS NULL
         AND t.amount = ${stmt.amount}::numeric AND t.direction = ${stmt.direction}
         AND t.posted_on BETWEEN ${stmt.postedOn}::date - 3 AND ${stmt.postedOn}::date + 3
         AND ${ACCOUNT_MATCH("t", accountId, institution, last4)}
@@ -185,7 +189,7 @@ async function supersedeAlertFor(tx: DbOrTx, userId: string, stmt: { id: string;
 async function coveringStatementTxn(tx: DbOrTx, userId: string, t: { amount: string; direction: string; postedOn: string }, accountId: string | null, institution: string, last4: string): Promise<string | null> {
   const res = await tx.execute<{ id: string }>(sql`
     SELECT s.id FROM transactions s LEFT JOIN accounts a ON a.id = s.account_id
-    WHERE s.user_id = ${userId} AND s.source_kind IN ('statement', 'csv') AND s.superseded_by IS NULL
+    WHERE s.user_id = ${userId} AND s.source_kind IN (${kindList(COVERING_KINDS)}) AND s.superseded_by IS NULL
       AND s.amount = ${t.amount}::numeric AND s.direction = ${t.direction}
       AND s.posted_on BETWEEN ${t.postedOn}::date - 3 AND ${t.postedOn}::date + 3
       AND ${ACCOUNT_MATCH("s", accountId, institution, last4)}
