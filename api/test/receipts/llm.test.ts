@@ -61,6 +61,13 @@ describe("receipt extraction (mocked client)", () => {
     expect(paramsOf(create).thinking).toBeUndefined();
   });
 
+  it("falls back to the user's base currency (USD by default) when none is printed", () => {
+    const { currency: _c, ...noCurrency } = dmart;
+    expect(validateReceiptInput(noCurrency).currency).toBe("USD");
+    expect(validateReceiptInput({ ...noCurrency, currency: "rupees" }, "INR").currency).toBe("INR");
+    expect(validateReceiptInput(dmart, "USD").currency).toBe("INR");
+  });
+
   it("returns isReceipt=false with nothing else for a non-receipt", () => {
     const r = validateReceiptInput({ isReceipt: false, merchant: "HDFC", currency: "INR", total: 5000, items: [{ name: "x", lineTotal: 1, category: "other" }] });
     expect(r).toMatchObject({ isReceipt: false, merchant: null, total: null, items: [] });

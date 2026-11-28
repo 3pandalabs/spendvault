@@ -66,7 +66,7 @@ export async function processReceipt(
 
   let ex;
   try {
-    ex = await extractReceiptWithLlm(client, model, input);
+    ex = await extractReceiptWithLlm(client, model, { ...input, fallbackCurrency: user.baseCurrency });
   } catch (err) {
     ingestLog.warn({ documentId: doc.id, err: errKind(err) }, "receipt extraction failed");
     if (receipt.status === "manual") await keepManual(doc);

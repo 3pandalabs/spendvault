@@ -90,7 +90,10 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
     topMerchants: Array<{ merchant, category, amount, count }>,          // top 10
     daily: Array<{ date, amount }>,                                        // every day of the month
     trend: Array<{ month, spend }>,                                        // last 12 months, oldest first
-    recentAlerts: Alert[] }                                                // up to 5, not dismissed
+    recentAlerts: Alert[],                                                 // up to 5, not dismissed
+    receipts: { total, matched, unmatched, pendingExtraction,              // all-time receipt counts (prompts)
+      itemized: { txnCount, amount,                                        // this month's transactions with a matched receipt whose items add up
+        byCategory: Array<{ category, label, amount }> } } }               // their spend by item category, desc; sums to amount
   ```
 
 ## Alerts (spikes)
@@ -112,8 +115,8 @@ Spend totals always exclude `superseded_by IS NOT NULL` rows and NON_SPEND categ
 ## Receipts
 A receipt is a `documents` row with `kind = "receipt"` plus a `receipts` row and its `receipt_items`. The original photo/PDF/text is the document's AES-256-GCM `content_enc` (DATA_KEY) with the same retention rule as statements: deleted after a successful AI read when `deleteOriginals` is on; kept while pending/failed or when the user typed the total in.
 Extraction: Claude (`ANTHROPIC_MODEL`) with vision for photos, a PDF document block for scans, text for e-receipts. Without `ANTHROPIC_API_KEY` the receipt is stored and marked `pending_extraction` (nothing is guessed); the worker re-queues those hourly once a key is set, and the user can type the total meanwhile.
-Matching (`lib/receipts/match.ts`): a debit, non-superseded transaction in the same currency, amount within max(₹1, 1%) of the total, posted within ±3 days of the purchase date (undated: 10 days before to 1 day after the receipt arrived), not linked to another receipt, and not one the user unlinked from this receipt. Auto-linking needs a fuzzy merchant-name match (including the built-in merchant map) or a single candidate on a dated receipt; ties stay unmatched. Runs after extraction, after a manual total, and after every statement/alert that adds transactions (which also moves links from superseded alert rows to the statement line).
-Item categories feed `GET /dashboard` `byCategory` only, for matched receipts whose items add up (`itemsReconciled`) and whose transaction category isn't user-locked; the transaction amount is allocated pro rata, so totals never change.
+Matching (`lib/receipts/match.ts`): a debit, non-superseded transaction in the same currency, amount within max(1 unit, 1%) of the total ($1 / ₹1), posted within ±3 days of the purchase date (undated: 10 days before to 1 day after the receipt arrived), not linked to another receipt, and not one the user unlinked from this receipt. Auto-linking needs a fuzzy merchant-name match (including the built-in merchant map) or a single candidate on a dated receipt; ties stay unmatched. Runs after extraction, after a manual total, and after every statement/alert that adds transactions (which also moves links from superseded alert rows to the statement line).
+Item categories feed `GET /dashboard` `byCategory` (and `receipts.itemized`) only, for matched receipts whose items add up (`itemsReconciled`) and whose transaction category isn't user-locked; the transaction amount is allocated pro rata, so totals never change.
 ```
 Receipt = { id, documentId, status: "processing"|"pending_extraction"|"extracted"|"manual"|"failed",
   merchant: string|null, purchasedOn: string|null, total: number|null, tax: number|null, currency,

@@ -9,7 +9,7 @@ import { categorize, type Category } from "../categories.js";
 import { errKind, ingestLog } from "../ingest/log.js";
 import { num, toDbAmount, toNum } from "../money.js";
 import { amountTolerance, looseScore, matchWindow, pickMatch, type MatchCandidate, type MatchReceipt } from "./match.js";
-import { allocateItems, type SplitPart } from "./split.js";
+import { allocateItems, type ItemizedTxn, type SplitItem, type SplitPart } from "./split.js";
 import type { ReceiptExtraction } from "./llm.js";
 
 export type ReceiptRow = typeof receipts.$inferSelect;
@@ -179,12 +179,14 @@ export async function candidatesFor(userId: string, r: ReceiptRow, receivedOn: s
 // ---------------------------------------------------------------- dashboard splits
 
 /** Item splits for matched transactions in [from, to] whose receipts add up. */
-export async function loadReceiptSplits(userId: string, from: string, to: string): Promise<Map<string, SplitPart[]>> {
+/** Matched, reconciled receipts' transactions (and items) posted in [from, to]. */
+export async function loadItemizedTxns(userId: string, from: string, to: string): Promise<Map<string, ItemizedTxn & { postedOn: string; items: SplitItem[] }>> {
   const rows = await db
     .select({
       txnId: transactions.id,
       txnAmount: transactions.amount,
       txnCategory: transactions.category,
+      postedOn: transactions.postedOn,
       category: receiptItems.category,
       lineTotal: receiptItems.lineTotal,
     })
@@ -203,18 +205,41 @@ export async function loadReceiptSplits(userId: string, from: string, to: string
         lte(transactions.postedOn, to),
       ),
     );
-  const grouped = new Map<string, { amount: number; category: string; items: Array<{ category: string; lineTotal: number }> }>();
+  const grouped = new Map<string, ItemizedTxn & { postedOn: string; items: SplitItem[] }>();
   for (const r of rows) {
-    const g = grouped.get(r.txnId) ?? { amount: num(r.txnAmount), category: r.txnCategory, items: [] };
+    const g = grouped.get(r.txnId) ?? { amount: num(r.txnAmount), category: r.txnCategory, postedOn: r.postedOn, items: [] };
     g.items.push({ category: r.category, lineTotal: num(r.lineTotal) });
     grouped.set(r.txnId, g);
   }
+  return grouped;
+}
+
+/** Category splits by transaction id, for GET /dashboard byCategory. */
+export function receiptSplits(grouped: ReadonlyMap<string, ItemizedTxn>): Map<string, SplitPart[]> {
   const out = new Map<string, SplitPart[]>();
   for (const [id, g] of grouped) {
     const parts = allocateItems(g.amount, g.category, g.items);
     if (parts) out.set(id, parts);
   }
   return out;
+}
+
+/** Receipt counts for the dashboard prompts (all time). */
+export async function receiptCounts(userId: string) {
+  const rows = await db
+    .select({ match: receipts.matchStatus, status: receipts.status, n: sql<number>`count(*)::int` })
+    .from(receipts)
+    .where(eq(receipts.userId, userId))
+    .groupBy(receipts.matchStatus, receipts.status);
+  let total = 0;
+  let matched = 0;
+  let pendingExtraction = 0;
+  for (const r of rows) {
+    total += r.n;
+    if (r.match !== "unmatched") matched += r.n;
+    if (r.status === "pending_extraction") pendingExtraction += r.n;
+  }
+  return { total, matched, unmatched: total - matched, pendingExtraction };
 }
 
 // ---------------------------------------------------------------- views

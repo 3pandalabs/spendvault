@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeDashboard } from "../../src/lib/insights/dashboard.js";
-import { allocateItems } from "../../src/lib/receipts/split.js";
+import { allocateItems, summarizeItemized } from "../../src/lib/receipts/split.js";
 import { txn } from "../insights/helpers.js";
 
 describe("allocateItems", () => {
@@ -63,5 +63,27 @@ describe("computeDashboard with receipt splits", () => {
     expect(Object.fromEntries(d.byCategory.map((c) => [c.category, c.amount]))).toEqual({ groceries: 2900, shopping: 1800 });
     expect(d.topMerchants.find((m) => m.merchant === "DMart")).toMatchObject({ amount: 4200, count: 1 });
     expect(d.daily.find((x) => x.date === "2026-11-12")?.amount).toBe(4200);
+  });
+});
+
+describe("summarizeItemized", () => {
+  it("counts every matched transaction, split or not, and sums to their spend", () => {
+    const s = summarizeItemized([
+      // $40 Target charge: $25 of it was snacks (groceries), $15 a phone case.
+      { amount: 40, category: "shopping", items: [{ category: "groceries", lineTotal: 25 }, { category: "shopping", lineTotal: 15 }] },
+      // All-groceries receipt: allocateItems is a no-op, still counted whole.
+      { amount: 60, category: "groceries", items: [{ category: "groceries", lineTotal: 60 }] },
+      { amount: 0, category: "other", items: [] },
+    ]);
+    expect(s.txnCount).toBe(2);
+    expect(s.amount).toBe(100);
+    expect(s.byCategory).toEqual([
+      { category: "groceries", label: "Groceries", amount: 85 },
+      { category: "shopping", label: "Shopping", amount: 15 },
+    ]);
+  });
+
+  it("is empty with no receipts", () => {
+    expect(summarizeItemized([])).toEqual({ txnCount: 0, amount: 0, byCategory: [] });
   });
 });

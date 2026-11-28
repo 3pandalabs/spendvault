@@ -27,7 +27,8 @@ export type ReceiptExtraction = {
   itemsReconciled: boolean | null;
 };
 
-export type ReceiptInput = { image?: LlmImage; pdf?: Buffer; text?: string };
+// `fallbackCurrency`: the user's base currency, used when the receipt doesn't print one.
+export type ReceiptInput = { image?: LlmImage; pdf?: Buffer; text?: string; fallbackCurrency?: string };
 
 const RECEIPT_TOOL = {
   name: "record_receipt",
@@ -61,7 +62,7 @@ const RECEIPT_TOOL = {
   },
 };
 
-const RECEIPT_SYSTEM = `You read purchase receipts, tax invoices, e-bills and order confirmations (mostly Indian, some US).
+const RECEIPT_SYSTEM = `You read purchase receipts, tax invoices, e-bills and order confirmations (mostly US, some Indian).
 Rules:
 - Record each purchased line item once with its line total. Discounts/coupons are separate lines with a negative lineTotal.
 - Do NOT record tax, subtotal, total, round-off, tip, delivery or packing fees as items unless they are charged as a separate line the customer paid for (delivery/packing fees ARE items).
@@ -83,7 +84,7 @@ const receiptSchema = z.object({
   isReceipt: z.boolean(),
   merchant: z.string().trim().max(120).nullable().optional(),
   date: z.string().nullable().optional(),
-  currency: z.string().regex(/^[A-Z]{3}$/).catch("INR").default("INR"),
+  currency: z.string().regex(/^[A-Z]{3}$/).nullable().optional().catch(null),
   subtotal: optNum,
   tax: optNum,
   total: optNum,
@@ -101,10 +102,10 @@ export function itemsReconcile(items: Array<{ lineTotal: number }>, tax: number 
 }
 
 /** Validate one record_receipt tool input. Drops bad item rows; rejects a malformed envelope. */
-export function validateReceiptInput(input: unknown): ReceiptExtraction {
+export function validateReceiptInput(input: unknown, fallbackCurrency = "USD"): ReceiptExtraction {
   const parsed = receiptSchema.safeParse(input);
   if (!parsed.success) throw new Error("llm: receipt output failed validation");
-  const d = parsed.data;
+  const d = { ...parsed.data, currency: parsed.data.currency ?? fallbackCurrency };
   const empty: ReceiptExtraction = { isReceipt: false, merchant: null, date: null, currency: d.currency, subtotal: null, tax: null, total: null, items: [], itemsReconciled: null };
   if (!d.isReceipt) return empty;
   const items: ReceiptItemParsed[] = [];
@@ -165,5 +166,5 @@ export async function extractReceiptWithLlm(client: LlmClient, model: string, in
     messages: [{ role: "user", content }],
   });
   if (res.stop_reason === "max_tokens") throw new Error("llm: output truncated");
-  return validateReceiptInput(toolInput(res, RECEIPT_TOOL.name));
+  return validateReceiptInput(toolInput(res, RECEIPT_TOOL.name), input.fallbackCurrency);
 }
