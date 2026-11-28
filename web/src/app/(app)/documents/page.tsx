@@ -1,10 +1,11 @@
 "use client";
 
-import { CheckCircle2, FileText, KeyRound, RotateCw, Trash2 } from "lucide-react";
+import { CheckCircle2, Download, FileText, KeyRound, Mail, RotateCw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { SOURCE_META } from "@/components/bits";
-import { EmptyState, ErrorText, LoadError, Loading, PageHeader, Spinner } from "@/components/common";
+import { delay, Eyebrow } from "@/components/app-ui";
+import { CopyButton, EmptyState, ErrorText, LoadError, Loading, PageHeader, Spinner } from "@/components/common";
 import { UploadZone } from "@/components/UploadZone";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,24 @@ import { fmtBytes, fmtDate, fmtTimestamp, money } from "@/lib/format";
 import { useAsync, usePoll } from "@/lib/hooks";
 import { useSession } from "@/lib/session";
 import type { Document, DocumentStatus } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+type View = "all" | "statements" | "receipts" | "attention";
+const VIEWS: Array<{ key: View; label: string; test: (d: Document) => boolean }> = [
+  { key: "all", label: "All", test: () => true },
+  { key: "statements", label: "Statements & alerts", test: (d) => d.kind !== "receipt" },
+  { key: "receipts", label: "Receipts", test: (d) => d.kind === "receipt" },
+  { key: "attention", label: "Needs you", test: (d) => needsAttention(d) },
+];
+
+/**
+ * A bank "your statement is ready" email that carried no PDF/CSV: the API
+ * reads the body, finds no transactions and marks it ignored. All we can do
+ * is say where to get the file.
+ */
+const isNoFileEmail = (d: Document) =>
+  d.status === "ignored" && d.source === "email" && d.kind !== "receipt" && (d.mimeType.startsWith("text/") || d.mimeType === "message/rfc822");
+const needsAttention = (d: Document) => ["needs_password", "failed", "pending_extraction"].includes(d.status) || isNoFileEmail(d);
 
 const STATUS: Record<DocumentStatus, [string, BadgeVariant]> = {
   received: ["Received", "info"],
@@ -28,6 +47,8 @@ const STATUS: Record<DocumentStatus, [string, BadgeVariant]> = {
 const busyStatus = (s: DocumentStatus) => s === "received" || s === "processing";
 
 export default function DocumentsPage() {
+  const { me } = useSession();
+  const [view, setView] = useState<View>("all");
   const first = useAsync(() => listDocuments({ limit: 50 }), "docs");
   const [older, setOlder] = useState<{ items: Document[]; cursor: string | null } | null>(null);
   const [patched, setPatched] = useState<Record<string, Document | null>>({});
@@ -40,6 +61,8 @@ export default function DocumentsPage() {
     .filter((d) => (seen.has(d.id) ? false : (seen.add(d.id), true)))
     .map((d) => (d.id in patched ? patched[d.id] : d))
     .filter((d): d is Document => d !== null);
+  const shown = items.filter(VIEWS.find((v) => v.key === view)!.test);
+  const attention = items.filter(needsAttention).length;
   const cursor = older ? older.cursor : (first.data?.nextCursor ?? null);
   const anyBusy = items.some((d) => busyStatus(d.status));
 
@@ -69,29 +92,78 @@ export default function DocumentsPage() {
   return (
     <>
       <PageHeader
-        title="Documents"
-        subtitle="Everything you've sent us: forwarded emails, uploads, shares and WhatsApp files."
+        eyebrow="Inbox"
+        title="Everything you've sent us"
+        subtitle="Statements, purchase alerts and receipts from Gmail forwarding, uploads, your phone's Share button and WhatsApp, and where each one is."
         actions={
           <Link href="/setup">
             <Button variant="outline">Set up forwarding</Button>
           </Link>
         }
       />
-      <UploadZone
-        onUploaded={(docs) => {
-          setPatched((p) => ({ ...p, ...Object.fromEntries(docs.map((d) => [d.id, d])) }));
-          first.reload();
-        }}
-      />
+      <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr]">
+        <UploadZone
+          onUploaded={(docs) => {
+            setPatched((p) => ({ ...p, ...Object.fromEntries(docs.map((d) => [d.id, d])) }));
+            first.reload();
+          }}
+        />
+        <div className="spa-tile rounded-2xl p-4">
+          <Eyebrow className="flex items-center gap-1.5">
+            <Mail className="size-3.5" /> Your private address
+          </Eyebrow>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <code className="min-w-0 flex-1 rounded-lg bg-zinc-950/60 px-2.5 py-1.5 text-xs break-all">{me.forwardingAddress}</code>
+            <CopyButton value={me.forwardingAddress} />
+          </div>
+          <p className="mt-2 text-xs text-fg-muted">
+            Forward statements, purchase alerts and e-receipts here.{" "}
+            {me.setup.forwardingConfirmed ? (
+              "Gmail forwarding is on."
+            ) : (
+              <Link href="/setup" className="text-accent-strong hover:underline">
+                Set up a Gmail filter
+              </Link>
+            )}
+          </p>
+          <p className="mt-3 flex items-start gap-1.5 text-xs text-fg-muted">
+            <Download className="mt-0.5 size-3.5 shrink-0" />
+            No statement email? Most banks let you download a CSV of recent activity from their website. Upload it here.
+          </p>
+        </div>
+      </div>
 
       <div className="mt-6">
-        <h2 className="mb-3 flex items-center gap-2 text-base font-semibold">
-          Inbox {anyBusy ? <Spinner className="text-fg-muted" /> : null}
-        </h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-base font-semibold">
+            Received {anyBusy ? <Spinner className="text-fg-muted" /> : null}
+          </h2>
+          <div role="tablist" aria-label="Filter the inbox" className="inline-flex max-w-full overflow-x-auto rounded-xl border border-white/10 bg-white/[0.03] p-1">
+            {VIEWS.map((v) => (
+              <button
+                key={v.key}
+                role="tab"
+                aria-selected={view === v.key}
+                onClick={() => setView(v.key)}
+                className={cn(
+                  "rounded-lg px-3 py-1.5 text-sm whitespace-nowrap",
+                  view === v.key ? "bg-white/10 font-medium text-zinc-100" : "text-zinc-400 hover:text-zinc-200",
+                )}
+              >
+                {v.label}
+                {v.key === "attention" && attention ? (
+                  <span className="ml-1.5 rounded-full bg-amber-400 px-1.5 text-[10px] font-semibold text-zinc-950 tabular">{attention}</span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        </div>
         {first.error ? (
           <LoadError error={first.error} onRetry={first.reload} />
         ) : !first.data ? (
           <Loading />
+        ) : shown.length === 0 && items.length > 0 ? (
+          <EmptyState icon={<CheckCircle2 />} title="Nothing in this view" body={cursor ? "Load older items to look further back." : "Everything else is in the other tabs."} />
         ) : items.length === 0 ? (
           <EmptyState
             icon={<FileText />}
@@ -106,8 +178,8 @@ export default function DocumentsPage() {
         ) : (
           <>
             <ul className="space-y-2">
-              {items.map((d) => (
-                <DocRow key={d.id} d={d} onChange={(u) => setPatched((p) => ({ ...p, [d.id]: u }))} />
+              {shown.map((d, i) => (
+                <DocRow key={d.id} d={d} index={i} onChange={(u) => setPatched((p) => ({ ...p, [d.id]: u }))} />
               ))}
             </ul>
             <div className="mt-4 flex flex-col items-center gap-2">
@@ -125,7 +197,7 @@ export default function DocumentsPage() {
   );
 }
 
-function DocRow({ d, onChange }: { d: Document; onChange: (d: Document | null) => void }) {
+function DocRow({ d, index, onChange }: { d: Document; index: number; onChange: (d: Document | null) => void }) {
   const { me } = useSession();
   const src = SOURCE_META[d.source] ?? SOURCE_META.upload;
   const Icon = src.icon;
@@ -168,7 +240,7 @@ function DocRow({ d, onChange }: { d: Document; onChange: (d: Document | null) =
     d.periodStart && d.periodEnd ? `${fmtDate(d.periodStart)} – ${fmtDate(d.periodEnd)}` : d.periodEnd ? fmtDate(d.periodEnd) : null;
 
   return (
-    <li className="rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-4">
+    <li className="spa-tile spa-in rounded-2xl p-4" style={delay(Math.min(index, 10) * 0.03)}>
       <div className="flex gap-3">
         <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-bg-subtle text-fg-muted" title={src.label}>
           <Icon className="size-4" aria-hidden />
@@ -187,7 +259,7 @@ function DocRow({ d, onChange }: { d: Document; onChange: (d: Document | null) =
           <p className="mt-0.5 text-xs text-fg-muted">
             {[
               d.institutionName,
-              d.kind === "alert" ? "Transaction alert" : d.kind === "statement" ? "Statement" : d.kind === "receipt" ? "Receipt" : null,
+              d.kind === "alert" ? "Purchase alert" : d.kind === "statement" ? "Statement" : d.kind === "receipt" ? "Receipt" : null,
               period,
               d.source === "email" && d.emailFrom ? `from ${d.emailFrom}` : null,
               fmtBytes(d.sizeBytes),
@@ -219,7 +291,22 @@ function DocRow({ d, onChange }: { d: Document; onChange: (d: Document | null) =
               ) : null}
             </p>
           ) : null}
-          {d.error && (d.status === "failed" || d.status === "ignored") ? <p className="mt-1 text-sm text-fg-muted">{d.error}</p> : null}
+          {isNoFileEmail(d) ? (
+            <div className="mt-2 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-sm text-sky-100">
+              <p className="font-medium">This email had no statement file attached.</p>
+              <p className="mt-0.5 text-sky-100/80">
+                Many banks (Chase, Amex, Capital One, Citi, Bank of America and others) only email &ldquo;your statement is ready&rdquo;. Sign in to
+                your bank, download the statement PDF or a CSV of the activity, and upload it above. Purchase alerts keep you current between
+                statements:{" "}
+                <Link href="/setup#alerts" className="font-medium text-sky-200 underline">
+                  set them up
+                </Link>
+                .
+              </p>
+            </div>
+          ) : d.error && (d.status === "failed" || d.status === "ignored") ? (
+            <p className="mt-1 text-sm text-fg-muted">{d.error}</p>
+          ) : null}
 
           {d.status === "needs_password" ? (
             <form

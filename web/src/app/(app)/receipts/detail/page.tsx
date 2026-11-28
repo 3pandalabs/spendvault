@@ -1,12 +1,12 @@
 "use client";
 
-import { ArrowLeft, Check, Link2, Link2Off, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Link2, Link2Off, ScanLine, Sparkles, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { CategoryChip } from "@/components/bits";
 import { EmptyState, ErrorText, Field, LoadError, Loading, PageHeader, Panel, PanelTitle, Spinner } from "@/components/common";
-import { ReceiptBadges, ReceiptImage, ReceiptItemsTable, ReceiptSummaryLine } from "@/components/receipts";
+import { ItemStrip, ReceiptBadges, ReceiptImage, ReceiptItemsTable, ReceiptSummaryLine } from "@/components/receipts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -66,11 +66,12 @@ function ReceiptView({ r, onChange, reload }: { r: ReceiptDetail; onChange: (r: 
         <BackLink />
       </div>
       <PageHeader
+        eyebrow="Receipt"
         title={r.merchant || "Receipt"}
         subtitle={[r.purchasedOn ? fmtDate(r.purchasedOn) : null, r.total != null ? moneyExact(r.total, r.currency) : null].filter(Boolean).join(" · ") || undefined}
         actions={<ReceiptBadges r={r} />}
       />
-      {r.error ? <p className="mb-4 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-200">{r.error}</p> : null}
+      {r.error ? <p className="mb-4 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-200">{r.error}</p> : null}
       {r.status === "pending_extraction" && !me.llmEnabled ? (
         <p className="mb-4 rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-fg-muted">
           Saved and encrypted. Automatic reading isn&apos;t on yet, so type the total below and we&apos;ll match it to your statement.
@@ -84,13 +85,17 @@ function ReceiptView({ r, onChange, reload }: { r: ReceiptDetail; onChange: (r: 
             <MatchPanel r={r} onChange={onChange} />
           </Panel>
 
-          <Panel>
+          <div className="spa-ring">
+          <section className="bg-zinc-950/95 p-4 sm:p-5">
             <PanelTitle aside={r.itemsReconciled === false ? <span className="text-xs text-amber-300">Items don&apos;t add up to the total</span> : null}>
-              Items
+              <span className="inline-flex items-center gap-2">
+                <ScanLine className="size-4 text-emerald-300" aria-hidden /> Items
+              </span>
             </PanelTitle>
             {r.items.length && r.total != null ? (
-              <div className="mb-3">
+              <div className="mb-3 space-y-2">
                 <ReceiptSummaryLine amount={r.transaction?.amount ?? r.total} currency={r.currency} merchant={r.merchant} items={r.items} />
+                <ItemStrip items={r.items} amount={r.transaction?.amount ?? r.total} />
               </div>
             ) : null}
             <ReceiptItemsTable items={r.items} currency={r.currency} onCategory={async (it, category) => onChange(await updateReceiptItem(r.id, it.id, category))} />
@@ -99,7 +104,8 @@ function ReceiptView({ r, onChange, reload }: { r: ReceiptDetail; onChange: (r: 
                 Item categories count toward your dashboard&apos;s category breakdown once the receipt is matched and its items add up.
               </p>
             ) : null}
-          </Panel>
+          </section>
+          </div>
 
           <Panel>
             <PanelTitle>{needsTotal ? "Enter the total" : "Details"}</PanelTitle>
@@ -151,7 +157,7 @@ function MatchPanel({ r, onChange }: { r: ReceiptDetail; onChange: (r: ReceiptDe
   if (t) {
     return (
       <div className="space-y-3">
-        <Link href={`/transactions/detail?id=${t.id}`} className="block rounded-lg bg-bg-subtle p-3 hover:bg-white/10">
+        <Link href={`/transactions/detail?id=${t.id}`} className="block rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-3 hover:bg-emerald-400/10">
           <div className="flex items-start justify-between gap-2">
             <p className="min-w-0 truncate text-sm font-medium">{t.merchant}</p>
             <span className="text-sm font-medium tabular">{moneyExact(t.amount, t.currency)}</span>
@@ -251,7 +257,7 @@ function DetailsForm({ r, onChange }: { r: ReceiptDetail; onChange: (r: ReceiptD
   return (
     <form onSubmit={save} className="grid gap-3 sm:grid-cols-2">
       <Field label="Shop" htmlFor="rc-merchant">
-        <Input id="rc-merchant" value={merchant} maxLength={120} onChange={(e) => setMerchant(e.target.value)} placeholder="e.g. DMart" />
+        <Input id="rc-merchant" value={merchant} maxLength={120} onChange={(e) => setMerchant(e.target.value)} placeholder={r.currency === "INR" ? "e.g. DMart" : "e.g. Target"} />
       </Field>
       <Field label="Date" htmlFor="rc-date">
         <Input id="rc-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -260,7 +266,7 @@ function DetailsForm({ r, onChange }: { r: ReceiptDetail; onChange: (r: ReceiptD
         <Input id="rc-total" inputMode="decimal" value={total} onChange={(e) => setTotal(e.target.value)} placeholder="0.00" />
       </Field>
       <Field label="Tax (optional)" htmlFor="rc-tax">
-        <Input id="rc-tax" inputMode="decimal" value={tax} onChange={(e) => setTax(e.target.value)} placeholder="GST" />
+        <Input id="rc-tax" inputMode="decimal" value={tax} onChange={(e) => setTax(e.target.value)} placeholder={r.currency === "INR" ? "GST" : "Sales tax"} />
       </Field>
       <div className="flex items-center gap-3 sm:col-span-2">
         <Button type="submit" disabled={act.busy}>

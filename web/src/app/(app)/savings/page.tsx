@@ -2,6 +2,7 @@
 
 import { Copy, Lightbulb, PiggyBank, Receipt, Repeat } from "lucide-react";
 import Link from "next/link";
+import { INSIGHT_TABS, SubTabs } from "@/components/app-ui";
 import { CategoryChip } from "@/components/bits";
 import { EmptyState, LoadError, PageHeader, Panel, PanelTitle, Skeleton } from "@/components/common";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +20,8 @@ export default function SavingsPage() {
   const s = savings.data;
   return (
     <>
-      <PageHeader title="Savings" subtitle="Subscriptions, fees and habits worth a second look." />
+      <PageHeader eyebrow="Insights" title="Savings" subtitle="Subscriptions, fees and habits worth a second look." />
+      <SubTabs label="Insights" items={INSIGHT_TABS} />
       {savings.error ? (
         <LoadError error={savings.error} onRetry={savings.reload} />
       ) : !s ? (
@@ -46,7 +48,7 @@ function SavingsBody({ s }: { s: Savings }) {
         body="We need a couple of months of statements to spot subscriptions, fees and patterns. Add older statements to get suggestions sooner."
         action={
           <Link href="/documents">
-            <Button>Add statements</Button>
+            <Button className="spa-shine">Add statements</Button>
           </Link>
         }
       />
@@ -55,10 +57,10 @@ function SavingsBody({ s }: { s: Savings }) {
   const subsAnnual = s.subscriptions.reduce((n, x) => n + x.annualCost, 0);
   return (
     <div className="space-y-4">
-      <Panel className="border-amber-400/20 bg-amber-400/[0.04]">
+      <Panel className="spa-glow spa-in border-amber-400/20">
         <p className="font-mono text-xs tracking-widest text-amber-300/80 uppercase">You could save about</p>
-        <p className="mt-2 text-4xl font-semibold tracking-tight text-amber-200 tabular">
-          {money(s.estimatedMonthlySavings, cur)}
+        <p className="spa-display mt-2 text-4xl font-extrabold tabular sm:text-5xl">
+          <span className="spa-shimmer">{money(s.estimatedMonthlySavings, cur)}</span>
           <span className="text-lg font-normal text-zinc-400"> / month</span>
         </p>
         <p className="mt-1 text-sm text-zinc-400">

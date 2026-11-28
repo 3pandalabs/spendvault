@@ -17,7 +17,7 @@ const noop = () => () => undefined;
 const SHARE_ERRORS: Record<string, string> = {
   nosw: "SpendVault was still starting up and couldn't catch that file. Share it again; it works from the second time on.",
   empty: "Nothing came through with that share. Share the PDF, spreadsheet or photo itself, not a link to it.",
-  read: "We couldn't read the shared file. Try sharing it again, or upload it from Documents.",
+  read: "We couldn't read the shared file. Try sharing it again, or upload it from the Inbox.",
 };
 
 /**
@@ -68,8 +68,8 @@ export default function SharePage() {
   if (done) {
     return (
       <>
-        <PageHeader title="Sent to SpendVault" />
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-6 text-center">
+        <PageHeader eyebrow="Inbox" title="Sent to SpendVault" />
+        <div className="spa-tile spa-glow rounded-2xl p-6 text-center">
           <CheckCircle2 className="mx-auto size-10 text-down" />
           <p className="mt-2 font-medium">
             Got {done.length} file{done.length === 1 ? "" : "s"}. We&apos;re reading {done.length === 1 ? "it" : "them"} now.
@@ -80,7 +80,7 @@ export default function SharePage() {
               <Button>See progress</Button>
             </Link>
             <Link href="/dashboard">
-              <Button variant="outline">Dashboard</Button>
+              <Button variant="outline">Overview</Button>
             </Link>
           </div>
         </div>
@@ -90,7 +90,7 @@ export default function SharePage() {
 
   return (
     <>
-      <PageHeader title="Shared file" subtitle="Files you shared to SpendVault from another app." />
+      <PageHeader eyebrow="Inbox" title="Shared file" subtitle="Files you shared to SpendVault from another app. Photos and screenshots become receipts; PDFs and spreadsheets are read as statements." />
       {errorKey && SHARE_ERRORS[errorKey] && !files?.length ? (
         <p className="mb-4 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-200" role="alert">
           {SHARE_ERRORS[errorKey]}
@@ -110,7 +110,7 @@ export default function SharePage() {
           }
         />
       ) : (
-        <div className="space-y-4 rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-4">
+        <div className="spa-tile space-y-4 rounded-2xl p-4">
           <ul className="space-y-1">
             {files.map((f, i) => (
               <li key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-lg bg-bg-subtle px-3 py-2 text-sm">

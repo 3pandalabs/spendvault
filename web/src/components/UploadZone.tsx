@@ -58,7 +58,7 @@ export function UploadZone({ onUploaded }: { onUploaded: (docs: Document[]) => v
   }
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-sm">
+    <div className="spa-tile rounded-2xl p-4">
       <div
         role="button"
         tabIndex={0}

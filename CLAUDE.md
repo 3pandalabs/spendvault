@@ -5,6 +5,7 @@ Expense insights from emailed bank/credit-card statements (3PandaLabs app #7). O
 ## Layout
 - `api/` — Fastify 5 + drizzle + Postgres + Temporal worker (same tree, `Dockerfile.worker`). **`api/ROUTES.md` is the contract: change it first, then code.**
 - `web/` — Next 16 on a Cloudflare Worker (opennext). `next build --webpack`, no proxy.ts/middleware, `.env.production` committed. PWA with Web Share Target (`public/sw.js`).
+  Styles: public home = `app/home.css` (`spv-` prefix); signed-in pages = `app/(app)/app.css` (`spa-` prefix, dark only like home). Nav (`components/AppShell.tsx`): Overview, Transactions, Receipts, Inbox (/documents), Insights (/alerts + /savings), Setup/Settings; money/dates only via `lib/format.ts`.
 - `inbound/` — Email Routing Worker for `vault+<token>@in.spendvault.3pandalabs.com`; dumb transport to `POST /internal/inbound-email`.
 - `infra/README.md` — provisioning/deploy runbook.
 

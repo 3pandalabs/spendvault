@@ -3,6 +3,7 @@
 import { Download, LogOut, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ACCOUNT_TABS, SubTabs } from "@/components/app-ui";
 import { ErrorText, Field, PageHeader, Panel, PanelTitle, Spinner, Toggle, selectClass } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +35,8 @@ export default function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" subtitle={me.email} />
+      <PageHeader eyebrow="Account" title="Settings" subtitle={me.email} />
+      <SubTabs label="Account" items={ACCOUNT_TABS} />
       <div className="max-w-2xl space-y-4">
         <Panel>
           <PanelTitle>Profile</PanelTitle>
@@ -82,7 +84,7 @@ export default function SettingsPage() {
             <Toggle
               id="delete-originals"
               label="Delete original files after reading"
-              description="Recommended. We keep only the extracted transactions. Turn off if you want to retry or re-read statements later."
+              description="Recommended. We keep only the extracted transactions and receipt items. Turn off to keep statements and receipt photos so you can re-read or view them later."
               checked={me.deleteOriginals}
               disabled={saving === "originals"}
               onChange={(v) => patch("originals", { deleteOriginals: v })}
@@ -142,7 +144,7 @@ function ExportPanel() {
   return (
     <Panel>
       <PanelTitle>Export your data</PanelTitle>
-      <p className="text-sm text-fg-muted">Download every transaction, account and alert we hold for you, as a JSON file.</p>
+      <p className="text-sm text-fg-muted">Download every transaction, account, alert and receipt (with its line items) we hold for you, as a JSON file.</p>
       <Button variant="outline" className="mt-3" onClick={download} disabled={busy}>
         {busy ? <Spinner /> : <Download />} Download export
       </Button>
@@ -176,7 +178,7 @@ function DeletePanel({ onDeleted }: { onDeleted: () => void }) {
     <Panel className="border-red-400/30">
       <PanelTitle>Delete account</PanelTitle>
       <p className="text-sm text-fg-muted">
-        Permanently deletes your account and everything in it: documents, transactions, saved passwords, alerts and your WhatsApp link. This
+        Permanently deletes your account and everything in it: documents, receipts, transactions, saved passwords, alerts and your WhatsApp link. This
         can&apos;t be undone. Export first if you want a copy.
       </p>
       {!open ? (

@@ -1,18 +1,27 @@
 "use client";
 
 import {
+  BellRing,
+  Camera,
   CheckCircle2,
+  ChevronDown,
+  Download,
   ExternalLink,
+  FileUp,
   KeyRound,
   Lock,
   Mail,
   MessageCircle,
+  ReceiptText,
   Share2,
   Smartphone,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ACCOUNT_TABS, SubTabs } from "@/components/app-ui";
+import { AddReceiptButton } from "@/components/receipts";
 import { CopyButton, ErrorText, Field, LoadError, Loading, Panel, PageHeader, Spinner, selectClass } from "@/components/common";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,33 +40,256 @@ import { fmtTimestamp } from "@/lib/format";
 import { useAsync, usePoll } from "@/lib/hooks";
 import { useSession } from "@/lib/session";
 import type { WhatsappLink } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+// Purchase-alert setup per US bank. Menu names move between app versions, so
+// each guide names the screen to look for rather than exact taps.
+const US_ALERT_GUIDES: Array<{ bank: string; steps: string[] }> = [
+  {
+    bank: "Chase",
+    steps: [
+      "In the Chase app, tap the profile icon, then Alerts (on chase.com: Profile & settings › Alerts).",
+      "Pick your card or checking account, then the purchase / transaction alert (\"Card transaction over\").",
+      "Set the amount to $0.01 and choose Email.",
+    ],
+  },
+  {
+    bank: "American Express",
+    steps: [
+      "In the Amex app, open Account › Notification settings (on americanexpress.com: Account Services › Alerts).",
+      "Turn on the purchase alert (\"Large purchase\" / \"Purchase over\").",
+      "Set the amount to $0.01 (or the lowest it allows) and turn on Email.",
+    ],
+  },
+  {
+    bank: "Capital One",
+    steps: [
+      "In the Capital One app, open Profile › Settings › Alerts, then pick your card.",
+      "Turn on the alert for purchases over an amount (or all transactions, if offered).",
+      "Set the amount to $0.01 and choose Email.",
+    ],
+  },
+  {
+    bank: "Citi",
+    steps: [
+      "On citi.com or the Citi app, open Profile › Manage alerts.",
+      "Under Transactions, turn on \"Purchase / transaction exceeds\".",
+      "Set the lowest amount it allows ($0.01 or $1) and send it to Email.",
+    ],
+  },
+  {
+    bank: "Bank of America",
+    steps: [
+      "In the BofA app, open Menu › Security & alerts › Alerts (on the website: Alerts › Settings).",
+      "Pick the card or account and turn on the purchase / card-used alert.",
+      "Set the amount to $0.01 and choose Email.",
+    ],
+  },
+  {
+    bank: "Wells Fargo",
+    steps: [
+      "In the Wells Fargo app, open Menu › Settings › Alerts (on the website: Account Services › Manage alerts).",
+      "Pick the card or account and turn on \"Purchases and withdrawals over\".",
+      "Set the amount to $0.01 and choose Email.",
+    ],
+  },
+  {
+    bank: "Discover",
+    steps: [
+      "In the Discover app, open Profile › Alerts (on discover.com: Manage › Alerts).",
+      "Turn on the transaction / purchase amount alert.",
+      "Set the amount to $0.00 or $0.01 and choose Email.",
+    ],
+  },
+];
+
+// Where each US bank keeps "download activity". CSV is the most reliable format to upload.
+const US_CSV_TIPS: Array<[string, string]> = [
+  ["Chase", "Account › Download account activity › CSV"],
+  ["American Express", "Statements & Activity › Download › CSV"],
+  ["Capital One", "View transactions › Download transactions › CSV"],
+  ["Citi", "Account › Download transactions › CSV"],
+  ["Bank of America", "Account activity › Download transactions › Microsoft Excel / CSV"],
+  ["Wells Fargo", "Account activity › Download account activity › Comma delimited"],
+  ["Discover", "Activity › Download › CSV"],
+];
 
 export default function SetupPage() {
   const { me } = useSession();
   const steps = [
-    { done: me.setup.forwardingConfirmed, label: "Gmail forwarding" },
-    { done: me.setup.hasPasswords, label: "PDF passwords" },
-    { done: me.setup.hasDocuments, label: "First statement" },
+    { done: me.setup.forwardingConfirmed, label: "Gmail forwarding", href: "#forwarding" },
+    { done: false, label: "Purchase alerts", href: "#alerts" },
+    { done: me.setup.hasDocuments, label: "First statement", href: "#statements" },
+    { done: false, label: "Receipts", href: "#receipts" },
   ];
   return (
     <>
-      <PageHeader title="Setup" subtitle="Three short steps. After that, new statements arrive and get read on their own." />
+      <PageHeader
+        eyebrow="Account"
+        title={
+          <>
+            Set it up once, <span className="spa-shimmer">then it runs itself</span>
+          </>
+        }
+        subtitle="Forward statements and purchase alerts from Gmail, add receipts when you want item-level detail. Nothing here asks for your bank login."
+      />
+      <SubTabs label="Account" items={ACCOUNT_TABS} />
       <ol className="mb-5 flex flex-wrap gap-2">
         {steps.map((s, i) => (
           <li key={s.label}>
-            <Badge variant={s.done ? "good" : "outline"}>
-              {s.done ? <CheckCircle2 className="size-3" /> : <span className="tabular">{i + 1}</span>} {s.label}
-            </Badge>
+            <a href={s.href}>
+              <Badge variant={s.done ? "good" : "outline"} className="hover:bg-white/5">
+                {s.done ? <CheckCircle2 className="size-3" /> : <span className="tabular">{i + 1}</span>} {s.label}
+              </Badge>
+            </a>
           </li>
         ))}
       </ol>
       <div className="space-y-4">
         <ForwardingCard />
+        <PurchaseAlertsCard />
+        <StatementsCard />
+        <ReceiptsCard />
         <PasswordsCard />
         <WhatsappCard />
         <InstallCard />
       </div>
     </>
+  );
+}
+
+function PurchaseAlertsCard() {
+  const [open, setOpen] = useState<string | null>("Chase");
+  return (
+    <Panel id="alerts" className="scroll-mt-24">
+      <CardHead
+        icon={<BellRing />}
+        title="2. Turn on purchase alerts"
+        sub="Statements arrive once a month. A purchase alert set to $0.01 emails you every charge as it happens, and the Gmail filter above forwards it, so your dashboard stays current all month."
+      />
+      <p className="mb-3 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] p-3 text-sm text-emerald-100/90">
+        Send the alerts to the same Gmail address that has the SpendVault filter. When the monthly statement arrives later, it replaces the alert rows
+        so nothing is counted twice.
+      </p>
+      <ul className="divide-y divide-line rounded-xl border border-white/10">
+        {US_ALERT_GUIDES.map((g) => {
+          const expanded = open === g.bank;
+          return (
+            <li key={g.bank}>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left text-sm font-medium hover:bg-white/[0.03]"
+                aria-expanded={expanded}
+                onClick={() => setOpen(expanded ? null : g.bank)}
+              >
+                {g.bank}
+                <ChevronDown className={cn("size-4 shrink-0 text-fg-muted transition-transform", expanded && "rotate-180")} aria-hidden />
+              </button>
+              {expanded ? (
+                <ol className="spa-fade space-y-2 px-3 pb-3">
+                  {g.steps.map((s, i) => (
+                    <li key={i} className="flex gap-3 text-sm">
+                      <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-fg tabular">
+                        {i + 1}
+                      </span>
+                      <span className="pt-0.5 text-fg-muted">{s}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-2 text-xs text-fg-muted">
+        Menu names change between app versions: look for Alerts, then a purchase or transaction alert with an amount. Other US banks (U.S. Bank,
+        PNC, USAA, Navy Federal…) have the same setting.
+      </p>
+      <details className="mt-3 rounded-xl bg-bg-subtle p-3 text-sm">
+        <summary className="cursor-pointer font-medium">Banks in India</summary>
+        <p className="mt-2 text-fg-muted">
+          Indian banks already send an alert for every card and UPI transaction. Make sure email alerts (not just SMS) are on: in net banking, check
+          that your Gmail address is registered and transaction alerts by email are enabled. HDFC, ICICI, SBI Card, Axis and Kotak alert emails are
+          read automatically.
+        </p>
+      </details>
+    </Panel>
+  );
+}
+
+function StatementsCard() {
+  return (
+    <Panel id="statements" className="scroll-mt-24">
+      <CardHead
+        icon={<Download />}
+        title="3. Add your first statement"
+        sub="Gmail forwards only new mail. For past months, or when your bank only emails “your statement is ready” with no file, download it from the bank's website and upload it."
+      />
+      <div className="grid gap-4 md:grid-cols-[1.2fr_1fr]">
+        <div>
+          <p className="text-sm font-medium">Download activity as CSV (most reliable)</p>
+          <ul className="mt-2 divide-y divide-line rounded-xl border border-white/10 text-sm">
+            {US_CSV_TIPS.map(([bank, path]) => (
+              <li key={bank} className="flex flex-col gap-0.5 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                <span className="font-medium">{bank}</span>
+                <span className="text-xs text-fg-muted sm:text-right">{path}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="space-y-3 text-sm">
+          <p className="text-fg-muted">
+            PDF statements work too, and so do Excel exports. Pick a date range that covers the months you want; up to 10 files at a time.
+          </p>
+          <p className="text-fg-muted">Indian banks: download the e-statement PDF from net banking. Save its password below once.</p>
+          <Link href="/documents">
+            <Button variant="outline">
+              <FileUp /> Upload in Inbox
+            </Button>
+          </Link>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function ReceiptsCard() {
+  const { me } = useSession();
+  const router = useRouter();
+  const ways = [
+    { icon: <Camera />, t: "Snap it", b: "Photo of a paper receipt. On a phone the button opens the camera." },
+    { icon: <FileUp />, t: "Upload", b: "Screenshots and PDF e-bills, several at once." },
+    { icon: <Mail />, t: "Forward", b: "Order confirmations and e-receipts to your SpendVault address." },
+    { icon: <Share2 />, t: "Share", b: "On Android, Share a photo or screenshot to SpendVault." },
+  ];
+  return (
+    <div id="receipts" className="spa-ring scroll-mt-24">
+      <section className="bg-zinc-950/95 p-4 sm:p-5">
+        <CardHead
+          icon={<ReceiptText />}
+          title="4. Add receipts for item-level detail"
+          sub="Optional, and the best part. A receipt matched to its charge splits it by what you bought, so a Target charge shows up as groceries and household, not just “shopping”."
+        />
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {ways.map((w) => (
+            <li key={w.t} className="flex gap-3 rounded-xl bg-white/[0.03] p-3 text-sm">
+              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-amber-400/10 text-amber-300 [&_svg]:size-4">{w.icon}</span>
+              <span className="min-w-0">
+                <span className="font-medium">{w.t}</span>
+                <span className="block text-xs text-fg-muted">{w.b}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <code className="min-w-0 flex-1 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-xs break-all">{me.forwardingAddress}</code>
+          <CopyButton value={me.forwardingAddress} />
+        </div>
+        <div className="mt-4 flex justify-start">
+          <AddReceiptButton onUploaded={() => router.push("/receipts")} />
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -95,11 +327,11 @@ function ForwardingCard() {
   const f = fwd.data;
 
   return (
-    <Panel>
+    <Panel id="forwarding" className="scroll-mt-24">
       <CardHead
         icon={<Mail />}
         title="1. Forward statements from Gmail"
-        sub="A Gmail filter sends only bank and card emails to your private SpendVault address. We never see anything else in your inbox."
+        sub="One Gmail filter sends only bank and card emails (statements and purchase alerts, US and Indian banks) to your private SpendVault address. We never see anything else in your inbox."
         done={me.setup.forwardingConfirmed}
       />
       {fwd.error && !f ? (
@@ -175,7 +407,7 @@ function ForwardingCard() {
             Tip: in the filter, also tick &ldquo;Also apply filter to matching conversations&rdquo; only if you want old statements imported too.
             Gmail forwards only new mail; for older statements, forward them by hand or upload them in{" "}
             <Link href="/documents" className="text-accent-strong hover:underline">
-              Documents
+              the Inbox
             </Link>
             .
           </p>
@@ -236,11 +468,11 @@ function PasswordsCard() {
   }
 
   return (
-    <Panel>
+    <Panel id="passwords" className="scroll-mt-24">
       <CardHead
         icon={<KeyRound />}
-        title="2. Save your PDF passwords"
-        sub="Some banks lock statement PDFs with a password (most Indian banks do). Save it once and we'll open every future statement automatically."
+        title="PDF passwords"
+        sub="US banks rarely lock statement PDFs; most Indian banks do. If yours does, save the password once and we'll open every future statement automatically."
         done={(pw.data?.items.length ?? 0) > 0}
       />
       <p className="mb-4 flex items-start gap-2 rounded-lg bg-bg-subtle p-3 text-sm text-fg-muted">
@@ -369,8 +601,8 @@ function WhatsappCard() {
     <Panel>
       <CardHead
         icon={<MessageCircle />}
-        title="3. Send statements on WhatsApp"
-        sub="Link your number once, then forward any statement PDF to our WhatsApp number. Optional."
+        title="WhatsApp"
+        sub="Optional. Link your number once, then forward statement PDFs or receipt photos to our WhatsApp number."
         done={Boolean(wa.linkedPhone)}
       />
       {!wa.available ? (

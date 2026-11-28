@@ -206,6 +206,14 @@ export type Dashboard = {
   daily: Array<{ date: string; amount: number }>;
   trend: Array<{ month: string; spend: number }>;
   recentAlerts: Alert[];
+  /** All-time receipt counts + this month's receipt-backed spend by item category (absent on an older API). */
+  receipts?: {
+    total: number;
+    matched: number;
+    unmatched: number;
+    pendingExtraction: number;
+    itemized: { txnCount: number; amount: number; byCategory: Array<{ category: CategoryKey; label: string; amount: number }> };
+  };
 };
 
 // ---- savings ----

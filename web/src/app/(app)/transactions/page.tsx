@@ -1,9 +1,10 @@
 "use client";
 
-import { ListOrdered, Lock, Receipt, Search, X } from "lucide-react";
+import { ListOrdered, Lock, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import { ReceiptPill } from "@/components/app-ui";
 import { CategoryChip } from "@/components/bits";
 import { EmptyState, ErrorText, LoadError, Loading, PageHeader, Spinner, selectClass } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -93,10 +94,14 @@ function Transactions() {
 
   return (
     <>
-      <PageHeader title="Transactions" subtitle="Every line from your statements and alerts. Fix a category and we'll remember it." />
+      <PageHeader
+        eyebrow="Transactions"
+        title="Every charge, every card"
+        subtitle="Every line from your statements and purchase alerts. Fix a category and we'll remember it. Charges with a receipt show what was bought."
+      />
 
       {/* Filters */}
-      <div className="mb-4 space-y-3 rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-3 sm:p-4">
+      <div className="spa-tile spa-in mb-4 space-y-3 rounded-2xl p-3 sm:p-4">
         <SearchBox initial={filter.q ?? ""} onSearch={(q) => setFilter({ q: q || undefined })} key={filter.q ?? ""} />
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           <select
@@ -197,7 +202,7 @@ function Transactions() {
         />
       ) : (
         <>
-          <div className={cn("overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm", first.loading && "opacity-60")}>
+          <div className={cn("spa-tile overflow-hidden rounded-2xl", first.loading && "opacity-60")}>
             <div className="hidden grid-cols-[7rem_minmax(0,1fr)_14rem_8rem] gap-3 border-b border-line bg-bg-subtle px-4 py-2 text-xs font-medium text-fg-muted md:grid">
               <span>Date</span>
               <span>Merchant</span>
@@ -311,9 +316,9 @@ function TxnRow({
               {t.merchant}
             </Link>
             {t.receiptId ? (
-              <span title="Has a receipt">
-                <Receipt className="size-3.5 shrink-0 text-amber-300" aria-label="Has a receipt" />
-              </span>
+              <Link href={`/transactions/detail?id=${t.id}`} aria-label={`${t.merchant}: receipt matched, see items`}>
+                <ReceiptPill />
+              </Link>
             ) : null}
           </p>
           <p className="truncate text-xs text-fg-muted" title={t.descriptionRaw}>

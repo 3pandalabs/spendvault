@@ -60,7 +60,7 @@ export function HBarList({
   const max = Math.max(1, ...rows.map((r) => r.amount));
   return (
     <ul className="space-y-3">
-      {rows.map((r) => (
+      {rows.map((r, i) => (
         <li key={r.key} className="min-w-0">
           <div className="flex items-baseline justify-between gap-3 text-sm">
             <span className="flex min-w-0 items-center gap-2">
@@ -73,8 +73,8 @@ export function HBarList({
           <div className="mt-1.5 flex items-center gap-3">
             <div className="h-2 flex-1 overflow-hidden rounded-full bg-bg-subtle">
               <div
-                className="h-full rounded-full"
-                style={{ width: `${Math.max(1.5, (r.amount / max) * 100)}%`, background: r.color }}
+                className="spa-grow h-full rounded-full"
+                style={{ width: `${Math.max(1.5, (r.amount / max) * 100)}%`, background: r.color, ["--d" as string]: `${0.1 + i * 0.05}s` }}
               />
             </div>
             {r.aside ? <div className="w-28 shrink-0 text-right">{r.aside}</div> : null}
@@ -252,7 +252,7 @@ export function ShareStrip({ rows }: { rows: Array<{ key: string; share: number 
   return (
     <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-bg-subtle" aria-hidden>
       {rows.map((r) => (
-        <div key={r.key} style={{ width: `${r.share * 100}%`, background: categoryColor(r.key) }} />
+        <div key={r.key} className="spa-grow" style={{ width: `${r.share * 100}%`, background: categoryColor(r.key) }} />
       ))}
     </div>
   );
