@@ -5,6 +5,7 @@
 // category (recurring.SUBSCRIPTION_LIKE): rent, EMIs and utilities recur too
 // but are bills, not things you'd cancel.
 
+import { cancelInfoFor, type CancelInfo } from "./cancelLinks.js";
 import { detectRecurring, isSubscriptionLike, type Cadence, type Recurring } from "./recurring.js";
 import { dayLabel, daysBetween, formatMoney, isSpendDebit, merchantKey, round2, usable, type Txn } from "./util.js";
 import type { AlertCandidate } from "./spikes.js";
@@ -28,6 +29,8 @@ export type Subscription = {
   priceChanged: boolean;
   previousAmount: number | null;
   isNew: boolean;
+  /** Official account/help page to cancel it (cancelLinks.ts), when we know the service. */
+  cancel: CancelInfo | null;
 };
 
 export type SubscriptionsData = {
@@ -52,6 +55,7 @@ export function subscriptionView(r: Recurring, today: string): Subscription {
     priceChanged: r.priceChanged,
     previousAmount: r.priceChanged ? r.previousTypical : null,
     isNew: daysBetween(r.firstChargedOn, today) <= NEW_SUBSCRIPTION_DAYS,
+    cancel: cancelInfoFor(`${r.merchant} ${r.charges[r.charges.length - 1]?.descriptionRaw ?? ""}`),
   };
 }
 

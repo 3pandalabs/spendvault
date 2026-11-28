@@ -61,7 +61,7 @@ export default function AlertsPage() {
       <PageHeader
         eyebrow="Insights"
         title="Alerts"
-        subtitle="Spending spikes, new fees, price hikes and possible double charges. Purchase alerts from your bank make these near real time."
+        subtitle="Spending spikes, new fees, price hikes, possible double charges, card payment reminders, closing return windows, missing refunds and free trials that turned paid. Purchase alerts from your bank make these near real time."
         actions={
           <Button variant="outline" onClick={checkNow} disabled={checking}>
             {checking ? <Spinner /> : <RefreshCw />} Check now

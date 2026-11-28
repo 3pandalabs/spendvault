@@ -9,6 +9,8 @@ import { AlertIcon } from "@/components/bits";
 import { BarChart, Delta, HBarList, ShareStrip } from "@/components/charts";
 import { EmptyState, LoadError, PageHeader, Panel, PanelTitle, Skeleton, selectClass } from "@/components/common";
 import { AddReceiptButton } from "@/components/receipts";
+import { AskPanel } from "@/components/AskPanel";
+import { CardsPanel, DueBanner } from "@/components/cards";
 import { Button } from "@/components/ui/button";
 import { getDashboard, listTransactions } from "@/lib/api";
 import { ACCOUNT_COLORS, categoryColor, categoryLabel } from "@/lib/categories";
@@ -169,6 +171,7 @@ function DashboardBody({ d, reload }: { d: Dashboard; reload: () => void }) {
 
   return (
     <div className="space-y-4">
+      {d.scope !== "household" && d.upcomingDues?.length ? <DueBanner dues={d.upcomingDues} /> : null}
       {/* Headline */}
       <section className="spa-tile spa-glow spa-in overflow-hidden rounded-2xl p-5 sm:p-6">
         <div className="grid gap-6 md:grid-cols-[1.3fr_1fr] md:items-end">
@@ -217,7 +220,13 @@ function DashboardBody({ d, reload }: { d: Dashboard; reload: () => void }) {
           Household view: spending from {d.members?.length ?? 0} people combined. Budgets, net worth and alerts stay personal.
         </p>
       ) : (
-        <PlanningRow d={d} />
+        <>
+          <PlanningRow d={d} />
+          <div className="grid gap-4 lg:grid-cols-2">
+            <AskPanel />
+            <CardsPanel />
+          </div>
+        </>
       )}
 
       {/* Prompts: things to do now */}

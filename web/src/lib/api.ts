@@ -9,8 +9,19 @@ import type {
   Account,
   Alert,
   AuthResponse,
+  AskAnswer,
+  AskTurn,
+  AskUsage,
   Budgets,
+  CardDue,
   CategoryInfo,
+  CategoryRule,
+  Goal,
+  PriceTrack,
+  RefundWatch,
+  ReturnsOverview,
+  SplitPart,
+  TransactionPatch,
   Currency,
   Dashboard,
   Document,
@@ -66,6 +77,17 @@ const MESSAGE_COPY: Record<string, string> = {
   transaction_already_linked: "That transaction already has a receipt. Unlink it there first.",
   llm_unavailable: "AI reading isn't switched on yet. Type the total instead.",
   unsupported_file_type: "That file type isn't supported here.",
+  split_must_add_up: "The parts have to add up to the full amount.",
+  split_needs_2_to_10_parts: "A split needs between 2 and 10 parts.",
+  split_needs_2_categories: "Pick at least two different categories.",
+  split_debits_only: "Only charges can be split.",
+  already_returned: "This purchase is already marked as returned.",
+  refund_debits_only: "Only charges can be returned.",
+  amount_required: "Enter the refund amount you expect.",
+  too_many_goals: "You can have up to 20 goals.",
+  ask_limit_reached: "That's today's 20 questions. Ask again tomorrow.",
+  ask_failed: "Couldn't get an answer just now. Try again in a moment.",
+  invalid_tag: "Pick one of the tax tags.",
 };
 
 /** Human message for any thrown value. */
@@ -275,8 +297,14 @@ export const updateAccount = (id: string, label: string | null) =>
 export const setAccountInNetWorth = (id: string, includeInNetWorth: boolean) =>
   call<Account>(`/accounts/${enc(id)}`, { method: "PATCH", body: { includeInNetWorth } });
 export const listTransactions = (f: TransactionFilter = {}) => call<Page<Transaction>>(`/transactions${qs(f)}`);
-export const updateTransaction = (id: string, b: { category: string; applyToMerchant?: boolean }) =>
-  call<Transaction>(`/transactions/${enc(id)}`, { method: "PATCH", body: b });
+export const updateTransaction = (id: string, b: TransactionPatch) => call<Transaction>(`/transactions/${enc(id)}`, { method: "PATCH", body: b });
+export const setSplits = (id: string, parts: SplitPart[]) => call<{ parts: SplitPart[] }>(`/transactions/${enc(id)}/splits`, { method: "PUT", body: { parts } });
+export const clearSplits = (id: string) => call<void>(`/transactions/${enc(id)}/splits`, { method: "DELETE" });
+export const listTags = () => call<{ items: Array<{ tag: string; count: number }> }>("/tags");
+export const listCategoryRules = () => call<{ items: CategoryRule[] }>("/category-rules");
+export const addCategoryRule = (b: { merchant: string; category: string; applyToPast?: boolean }) =>
+  call<{ rule: CategoryRule; updated: number }>("/category-rules", { method: "POST", body: b });
+export const deleteCategoryRule = (id: string) => call<void>(`/category-rules/${enc(id)}`, { method: "DELETE" });
 export const listCategories = () => call<{ items: CategoryInfo[] }>("/categories", { auth: false });
 export const getTransaction = (id: string) => call<TransactionDetail>(`/transactions/${enc(id)}`);
 
@@ -288,6 +316,10 @@ export const getReceipt = (id: string) => call<ReceiptDetail>(`/receipts/${enc(i
 export const updateReceipt = (id: string, b: ReceiptPatch) => call<ReceiptDetail>(`/receipts/${enc(id)}`, { method: "PATCH", body: b });
 export const updateReceiptItem = (id: string, itemId: string, category: string) =>
   call<ReceiptDetail>(`/receipts/${enc(id)}/items/${enc(itemId)}`, { method: "PATCH", body: { category } });
+export const setReceiptItemTags = (id: string, itemId: string, tags: string[]) =>
+  call<ReceiptDetail>(`/receipts/${enc(id)}/items/${enc(itemId)}`, { method: "PATCH", body: { tags } });
+export const getPriceTracks = (p: { q?: string; limit?: number } = {}) => call<{ items: PriceTrack[] }>(`/receipts/prices${qs(p)}`);
+export const getReturns = () => call<ReturnsOverview>("/receipts/returns");
 export const receiptCandidates = (id: string) => call<{ items: Array<Transaction & { score: number }> }>(`/receipts/${enc(id)}/candidates`);
 export const linkReceipt = (id: string, transactionId: string) =>
   call<ReceiptDetail>(`/receipts/${enc(id)}/link`, { method: "POST", body: { transactionId } });
@@ -362,6 +394,26 @@ export async function downloadAuthed(path: string, filename: string): Promise<vo
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// ---- cards / refunds / goals / ask ----
+
+export const getCards = () => call<{ items: CardDue[] }>("/cards");
+export const listRefunds = () => call<{ items: RefundWatch[] }>("/refunds");
+export const markReturned = (b: { transactionId?: string; receiptId?: string; returnedOn?: string; amount?: number }) =>
+  call<RefundWatch>("/refunds", { method: "POST", body: b });
+export const closeRefund = (id: string) => call<RefundWatch>(`/refunds/${enc(id)}/close`, { method: "POST" });
+export const deleteRefund = (id: string) => call<void>(`/refunds/${enc(id)}`, { method: "DELETE" });
+export const listGoals = () => call<{ currency: string; items: Goal[] }>("/goals");
+export const createGoal = (b: { name: string; targetAmount: number; targetDate?: string | null; startingAmount?: number }) =>
+  call<Goal>("/goals", { method: "POST", body: b });
+export const updateGoal = (id: string, b: { name?: string; targetAmount?: number; targetDate?: string | null }) =>
+  call<Goal>(`/goals/${enc(id)}`, { method: "PATCH", body: b });
+export const deleteGoal = (id: string) => call<void>(`/goals/${enc(id)}`, { method: "DELETE" });
+export const addContribution = (id: string, b: { amount: number; contributedOn?: string; note?: string | null }) =>
+  call<Goal>(`/goals/${enc(id)}/contributions`, { method: "POST", body: b });
+export const deleteContribution = (id: string, cid: string) => call<Goal>(`/goals/${enc(id)}/contributions/${enc(cid)}`, { method: "DELETE" });
+export const getAskUsage = () => call<AskUsage>("/ask/usage");
+export const ask = (question: string, history: AskTurn[] = []) => call<AskAnswer>("/ask", { method: "POST", body: { question, history } });
 
 // ---- whatsapp ----
 

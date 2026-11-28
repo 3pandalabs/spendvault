@@ -19,8 +19,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { ApiError, getMe, logout } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { ApiError, getMe, logout, updateMe } from "@/lib/api";
 import { setDisplayCurrency } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
 import { SessionProvider, useSignedIn } from "@/lib/session";
@@ -45,7 +45,7 @@ const MAIN: NavItem[] = [
   { href: "/transactions", label: "Transactions", icon: ListOrdered },
   { href: "/receipts", label: "Receipts", icon: ReceiptText },
   { href: "/documents", label: "Inbox", icon: Inbox, also: ["/share"] },
-  { href: "/alerts", label: "Insights", icon: TrendingUp, also: ["/savings", "/subscriptions", "/budgets"] },
+  { href: "/alerts", label: "Insights", icon: TrendingUp, also: ["/savings", "/subscriptions", "/budgets", "/goals"] },
   { href: "/net-worth", label: "Net worth", icon: Landmark },
 ];
 const ACCOUNT: NavItem[] = [
@@ -76,6 +76,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (me.error instanceof ApiError && me.error.status === 401) router.replace(loginUrl());
   }, [me.error, router]);
+
+  // Keep the API's "today" in the browser's time zone (card dues, digests). Once per page load.
+  const tzSynced = useRef(false);
+  const meData = me.data;
+  const setMeData = me.setData;
+  useEffect(() => {
+    if (!meData || tzSynced.current) return;
+    tzSynced.current = true;
+    let tz: string | null = null;
+    try {
+      tz = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+    } catch {
+      tz = null;
+    }
+    if (!tz || meData.timezone === tz) return;
+    updateMe({ timezone: tz }).then(setMeData, () => undefined);
+  }, [meData, setMeData]);
 
   if (!signedIn) return null;
   // Dates/counts follow the base currency (en-US, or en-IN for INR). Set before

@@ -2,8 +2,13 @@
 
 import {
   AlertTriangle,
+  CalendarClock,
   CheckCircle2,
   Copy as CopyIcon,
+  CreditCard,
+  ShieldCheck,
+  Undo2,
+  Hourglass,
   FileWarning,
   Gauge,
   Mail,
@@ -39,6 +44,11 @@ export const ALERT_ICON: Record<AlertKind, { icon: typeof Zap; label: string; to
   duplicate: { icon: CopyIcon, label: "Possible duplicate", tone: "bg-violet-400/10 text-violet-300" },
   new_subscription: { icon: Repeat, label: "New subscription", tone: "bg-emerald-400/10 text-emerald-300" },
   over_budget: { icon: Gauge, label: "Over budget", tone: "bg-red-400/10 text-red-300" },
+  card_due: { icon: CreditCard, label: "Card payment due", tone: "bg-amber-400/10 text-amber-300" },
+  return_window: { icon: CalendarClock, label: "Return window", tone: "bg-sky-400/10 text-sky-300" },
+  warranty: { icon: ShieldCheck, label: "Warranty", tone: "bg-emerald-400/10 text-emerald-300" },
+  refund_missing: { icon: Undo2, label: "Refund missing", tone: "bg-rose-400/10 text-rose-300" },
+  trial_converted: { icon: Hourglass, label: "Trial turned paid", tone: "bg-violet-400/10 text-violet-300" },
 };
 
 export function AlertIcon({ kind, className }: { kind: AlertKind; className?: string }) {

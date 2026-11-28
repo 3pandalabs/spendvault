@@ -1,15 +1,25 @@
 "use client";
 
-import { Download, LogOut, Trash2 } from "lucide-react";
+import { Download, LogOut, Plus, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ACCOUNT_TABS, SubTabs } from "@/components/app-ui";
-import { ErrorText, Field, PageHeader, Panel, PanelTitle, Spinner, Toggle, selectClass } from "@/components/common";
+import { ErrorText, Field, LoadError, PageHeader, Panel, PanelTitle, Skeleton, Spinner, Toggle, selectClass } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ApiError, clearTokens, deleteMe, downloadAuthed, errorMessage, exportMe, logout, updateMe } from "@/lib/api";
+import { addCategoryRule, ApiError, clearTokens, deleteCategoryRule, deleteMe, downloadAuthed, errorMessage, exportMe, listCategoryRules, logout, updateMe } from "@/lib/api";
+import { CATEGORY_KEYS, categoryColor, categoryLabel } from "@/lib/categories";
+import { useAction, useAsync } from "@/lib/hooks";
 import { useSession } from "@/lib/session";
-import type { Currency, MePatch } from "@/lib/types";
+import { TAX_TAGS, type CategoryKey, type Currency, type MePatch } from "@/lib/types";
+
+function browserZone(): string | null {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+}
 
 export default function SettingsPage() {
   const { me, setMe } = useSession();
@@ -68,6 +78,10 @@ export default function SettingsPage() {
               <option value="INR">Indian rupee (₹)</option>
             </select>
           </Field>
+          <p className="mt-4 text-sm text-fg-muted">
+            Dates use your time zone: <span className="text-fg">{me.timezone ?? browserZone() ?? (me.baseCurrency === "INR" ? "Asia/Kolkata" : "America/New_York")}</span>
+            <span className="block text-xs">Set from this browser. It decides &quot;today&quot; for due dates, return windows and summary emails.</span>
+          </p>
         </Panel>
 
         <Panel>
@@ -82,6 +96,22 @@ export default function SettingsPage() {
               onChange={(v) => patch("alerts", { alertEmails: v })}
             />
             <Toggle
+              id="digest-weekly"
+              label="Weekly summary email"
+              description="Monday morning: last week's spending vs the week before, top categories and card payments coming up."
+              checked={me.digestWeekly ?? false}
+              disabled={saving === "weekly"}
+              onChange={(v) => patch("weekly", { digestWeekly: v })}
+            />
+            <Toggle
+              id="digest-monthly"
+              label="Monthly summary email"
+              description="On the 1st: last month vs the month before, top categories, new subscriptions and upcoming card payments."
+              checked={me.digestMonthly ?? true}
+              disabled={saving === "monthly"}
+              onChange={(v) => patch("monthly", { digestMonthly: v })}
+            />
+            <Toggle
               id="delete-originals"
               label="Delete original files after reading"
               description="Recommended. We keep only the extracted transactions and receipt items. Turn off to keep statements and receipt photos so you can re-read or view them later."
@@ -93,6 +123,7 @@ export default function SettingsPage() {
         </Panel>
         <ErrorText>{error}</ErrorText>
 
+        <RulesPanel />
         <ExportPanel />
         <DeletePanel
           onDeleted={() => {
@@ -172,9 +203,137 @@ function ExportPanel() {
           {busy === "json" ? <Spinner /> : <Download />} Everything (JSON)
         </Button>
       </div>
+      <TaxExport busy={busy} onDownload={(path, name) => csv("tax", path, name)} />
       <div className="mt-2">
         <ErrorText>{error}</ErrorText>
       </div>
+    </Panel>
+  );
+}
+
+function TaxExport({ busy, onDownload }: { busy: string | null; onDownload: (path: string, name: string) => void }) {
+  const [thisYear] = useState(() => new Date().getFullYear());
+  const [year, setYear] = useState(thisYear);
+  const [tag, setTag] = useState("");
+  return (
+    <div className="mt-5 border-t border-line pt-4">
+      <p className="text-sm font-medium text-fg">Tax export (CSV)</p>
+      <p className="mt-0.5 text-sm text-fg-muted">
+        Transactions and receipt items you tagged tax deductible, business or HSA/FSA eligible, for one year. Handy for your accountant; not tax advice.
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <select aria-label="Tax year" className={`${selectClass} w-28`} value={year} onChange={(e) => setYear(Number(e.target.value))}>
+          {[0, 1, 2, 3].map((n) => (
+            <option key={n} value={thisYear - n}>
+              {thisYear - n}
+            </option>
+          ))}
+        </select>
+        <select aria-label="Tax tag" className={`${selectClass} w-48`} value={tag} onChange={(e) => setTag(e.target.value)}>
+          <option value="">All tax tags</option>
+          {TAX_TAGS.map((t) => (
+            <option key={t.tag} value={t.tag}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+        <Button
+          variant="outline"
+          disabled={busy !== null}
+          onClick={() => onDownload(`/me/export/tax.csv?year=${year}${tag ? `&tag=${encodeURIComponent(tag)}` : ""}`, `spendvault-tax-${year}${tag ? `-${tag}` : ""}`)}
+        >
+          {busy === "tax" ? <Spinner /> : <Download />} Download
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function RulesPanel() {
+  const rules = useAsync(listCategoryRules, "category-rules");
+  const [merchant, setMerchant] = useState("");
+  const [category, setCategory] = useState<CategoryKey>("groceries");
+  const [applyToPast, setApplyToPast] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
+  const add = useAction();
+  const del = useAction();
+  const items = rules.data?.items ?? [];
+  return (
+    <Panel>
+      <PanelTitle>Category rules</PanelTitle>
+      <p className="text-sm text-fg-muted">
+        &quot;This merchant is always this category.&quot; Rules apply to every new statement. You also create one when you change a category on
+        Transactions with &quot;Apply to all&quot; ticked.
+      </p>
+      {rules.error ? (
+        <LoadError error={rules.error} onRetry={rules.reload} />
+      ) : !rules.data ? (
+        <Skeleton className="mt-3 h-16" />
+      ) : items.length ? (
+        <ul className="mt-3 divide-y divide-line rounded-lg border border-white/10">
+          {items.map((r) => (
+            <li key={r.id} className="flex items-center gap-3 px-3 py-2">
+              <span className="min-w-0 flex-1 truncate text-sm capitalize">{r.merchant}</span>
+              <span className="inline-flex min-w-0 items-center gap-1.5 text-sm text-fg-muted">
+                <span className="size-2.5 shrink-0 rounded-full" style={{ background: categoryColor(r.category) }} aria-hidden />
+                <span className="truncate">{categoryLabel(r.category)}</span>
+              </span>
+              <button
+                type="button"
+                aria-label={`Delete rule for ${r.merchant}`}
+                disabled={del.busy}
+                className="shrink-0 rounded-full p-1.5 text-fg-muted hover:bg-white/10 hover:text-zinc-100"
+                onClick={() =>
+                  del.run(async () => {
+                    await deleteCategoryRule(r.id);
+                    rules.setData({ items: items.filter((x) => x.id !== r.id) });
+                  }, errorMessage)
+                }
+              >
+                <X className="size-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm text-fg-muted">No rules yet.</p>
+      )}
+      <ErrorText>{del.error}</ErrorText>
+      <form
+        className="mt-4 space-y-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setNotice(null);
+          const m = merchant.trim();
+          if (!m) return add.setError("Enter a merchant name, e.g. Trader Joe's.");
+          await add.run(async () => {
+            const r = await addCategoryRule({ merchant: m, category, applyToPast });
+            setMerchant("");
+            setNotice(applyToPast ? `Saved. ${r.updated} past transaction${r.updated === 1 ? "" : "s"} updated.` : "Saved.");
+            rules.reload();
+          }, errorMessage);
+        }}
+      >
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_14rem_auto]">
+          <Input aria-label="Merchant" placeholder="Merchant, as shown on Transactions" maxLength={80} value={merchant} onChange={(e) => setMerchant(e.target.value)} />
+          <select aria-label="Category" className={selectClass} value={category} onChange={(e) => setCategory(e.target.value as CategoryKey)}>
+            {CATEGORY_KEYS.map((k) => (
+              <option key={k} value={k}>
+                {categoryLabel(k)}
+              </option>
+            ))}
+          </select>
+          <Button type="submit" variant="outline" disabled={add.busy}>
+            {add.busy ? <Spinner /> : <Plus />} Add rule
+          </Button>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-fg-muted">
+          <input type="checkbox" className="size-4 accent-accent" checked={applyToPast} onChange={(e) => setApplyToPast(e.target.checked)} />
+          Apply to past transactions too (ones you set by hand stay as they are)
+        </label>
+        {notice ? <p className="text-sm text-down">{notice}</p> : null}
+        <ErrorText>{add.error}</ErrorText>
+      </form>
     </Panel>
   );
 }

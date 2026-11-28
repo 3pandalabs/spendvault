@@ -10,7 +10,14 @@ import { toDbAmount, toNum } from "../money.js";
 import { buildDigest } from "./digest.js";
 import { loadBudgets, loadTxns } from "./load.js";
 import { detectSpikes } from "./spikes.js";
-import { addDays, todayInKolkata } from "./util.js";
+import { addDays } from "./util.js";
+import { cardDueAlerts } from "./cards.js";
+import { refundAlerts } from "./refunds.js";
+import { trialAlerts } from "./trials.js";
+import { buildPeriodDigest, digestsDue, digestWorthSending, summarizePeriod, type Period } from "./periodDigest.js";
+import { returnWindowAlerts } from "../receipts/returns.js";
+import { loadCardDues, loadReturnAlertReceipts, syncRefundWatches, watchInput } from "../toolsDb.js";
+import { hourIn, todayFor, userTimeZone } from "../userTime.js";
 
 const HOUR = 3_600_000;
 const log = (msg: string, fields: Record<string, string | number> = {}) =>
@@ -19,14 +26,27 @@ const log = (msg: string, fields: Record<string, string | number> = {}) =>
 /** Runs the detector for one user; inserts new alerts (dedupe on key). Returns how many were created. */
 export async function recomputeAlertsForUser(userId: string): Promise<number> {
   const [u] = await db
-    .select({ baseCurrency: users.baseCurrency, monthlyBudget: users.monthlyBudget })
+    .select({ baseCurrency: users.baseCurrency, monthlyBudget: users.monthlyBudget, timezone: users.timezone })
     .from(users)
     .where(and(eq(users.id, userId), isNull(users.deletedAt)))
     .limit(1);
   if (!u) return 0;
-  const today = todayInKolkata();
-  const [txns, budgetRows] = await Promise.all([loadTxns(userId, u.baseCurrency, addDays(today, -400)), loadBudgets(userId)]);
-  const candidates = detectSpikes({ txns, currency: u.baseCurrency, today, budgets: budgetRows, monthlyBudget: toNum(u.monthlyBudget) });
+  const today = todayFor(u);
+  const [txns, budgetRows, dues, receiptRows, watches] = await Promise.all([
+    loadTxns(userId, u.baseCurrency, addDays(today, -400)),
+    loadBudgets(userId),
+    loadCardDues(userId, today),
+    loadReturnAlertReceipts(userId, addDays(today, -400)),
+    syncRefundWatches(userId),
+  ]);
+  const candidates = [
+    ...detectSpikes({ txns, currency: u.baseCurrency, today, budgets: budgetRows, monthlyBudget: toNum(u.monthlyBudget) }),
+    // Reminders (0003): card dues, return windows/warranties, missing refunds, trials that turned paid.
+    ...cardDueAlerts(dues, today),
+    ...returnWindowAlerts(receiptRows, today),
+    ...refundAlerts(watches.filter((w) => !w.resolvedAt).map(watchInput), today),
+    ...trialAlerts(txns, u.baseCurrency, today),
+  ];
   if (candidates.length === 0) return 0;
   const inserted = await db
     .insert(alerts)
@@ -56,7 +76,10 @@ async function sendDigests(): Promise<void> {
   const due = await db.execute<{ id: string; email: string; display_name: string }>(sql`
     SELECT u.id, u.email, u.display_name FROM users u
     WHERE u.alert_emails AND u.deleted_at IS NULL
-      AND (u.last_digest_at IS NULL OR u.last_digest_at < now() - interval '20 hours')
+      AND (u.last_digest_at IS NULL OR u.last_digest_at < now() - interval '20 hours'
+           -- a "due tomorrow/today" card reminder doesn't wait for the daily slot
+           OR EXISTS (SELECT 1 FROM alerts c WHERE c.user_id = u.id AND c.kind = 'card_due' AND c.emailed_at IS NULL
+                      AND c.dismissed_at IS NULL AND c.dedupe_key LIKE '%:1'))
       AND EXISTS (SELECT 1 FROM alerts a WHERE a.user_id = u.id AND a.emailed_at IS NULL
                   AND a.dismissed_at IS NULL AND a.created_at > now() - interval '7 days')
     LIMIT 500`);
@@ -94,10 +117,106 @@ async function sendDigests(): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------- weekly / monthly digests
+
+async function sendPeriodDigests(now = new Date()): Promise<number> {
+  const rows = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      displayName: users.displayName,
+      baseCurrency: users.baseCurrency,
+      timezone: users.timezone,
+      digestWeekly: users.digestWeekly,
+      digestMonthly: users.digestMonthly,
+      lastWeeklyDigest: users.lastWeeklyDigest,
+      lastMonthlyDigest: users.lastMonthlyDigest,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .where(and(isNull(users.deletedAt), sql`(${users.digestWeekly} OR ${users.digestMonthly})`))
+    .limit(2000);
+  let sent = 0;
+  for (const u of rows) {
+    try {
+      const tz = userTimeZone(u);
+      const today = todayFor(u, now);
+      const due = digestsDue({ ...u, createdOn: u.createdAt.toISOString().slice(0, 10) }, today, hourIn(tz, now));
+      for (const p of due) sent += await sendOneDigest(u, p, today);
+    } catch (err) {
+      log("period digest failed", { userId: u.id, error: String(err).slice(0, 200) });
+    }
+  }
+  return sent;
+}
+
+async function sendOneDigest(u: { id: string; email: string; displayName: string; baseCurrency: string }, p: Period, today: string): Promise<number> {
+  // Claim the period first: one email per user per period, even if two sweeps overlap.
+  const claimed = await db
+    .update(users)
+    .set(p.kind === "weekly" ? { lastWeeklyDigest: p.key } : { lastMonthlyDigest: p.key })
+    .where(
+      and(
+        eq(users.id, u.id),
+        p.kind === "weekly" ? sql`${users.lastWeeklyDigest} IS DISTINCT FROM ${p.key}` : sql`${users.lastMonthlyDigest} IS DISTINCT FROM ${p.key}`,
+      ),
+    )
+    .returning({ id: users.id });
+  if (!claimed.length) return 0;
+  const txns = await loadTxns(u.id, u.baseCurrency, p.prevFrom, p.to);
+  const summary = summarizePeriod(txns, u.baseCurrency, p);
+  if (!digestWorthSending(summary)) return 0;
+  const inPeriod = and(eq(alerts.userId, u.id), sql`${alerts.createdAt} >= ${p.from}::date`, sql`${alerts.createdAt} < ${p.to}::date + 1`);
+  const [subs, dues, counted] = await Promise.all([
+    db.select({ merchant: alerts.merchant, amount: alerts.amount }).from(alerts).where(and(inPeriod, eq(alerts.kind, "new_subscription"))).limit(5),
+    loadCardDues(u.id, today),
+    db.select({ n: sql<number>`count(*)::int` }).from(alerts).where(inPeriod),
+  ]);
+  const mail = buildPeriodDigest(
+    u.email,
+    u.displayName,
+    summary,
+    {
+      newSubscriptions: subs.map((s) => ({ merchant: s.merchant ?? "A new service", amount: toNum(s.amount) })),
+      upcomingDues: dues
+        .filter((d) => d.dueDate && (d.status === "due_soon" || d.status === "upcoming") && (d.daysUntilDue ?? 99) <= 14)
+        .map((d) => ({ label: d.label, dueDate: d.dueDate!, amount: d.minimumDue ?? d.statementBalance })),
+      alertCount: counted[0]?.n ?? 0,
+    },
+    { app: `${env.WEB_ORIGIN}/dashboard`, settings: `${env.WEB_ORIGIN}/settings` },
+  );
+  const res = await sendMail([mail], (msg) => log("mailer", { userId: u.id, detail: msg.slice(0, 120) }));
+  log("period digest", { userId: u.id, kind: p.kind, delivered: res.delivered, failed: res.failed, skipped: res.skipped });
+  return res.delivered;
+}
+
+// ---------------------------------------------------------------- sweep
+
+const REMINDER_EVERY_MS = 6 * HOUR;
+let lastReminderPass = 0;
+
+/** Users who may need a reminder (card due, return window, warranty, refund, trial) even if nothing new arrived. */
+async function reminderUsers(): Promise<string[]> {
+  const r = await db.execute<{ user_id: string }>(sql`
+    SELECT d.user_id FROM documents d JOIN users u ON u.id = d.user_id
+      WHERE u.deleted_at IS NULL AND d.due_date BETWEEN current_date - 2 AND current_date + 7
+    UNION SELECT r.user_id FROM receipts r JOIN users u ON u.id = r.user_id
+      WHERE u.deleted_at IS NULL AND (r.purchased_on > current_date - 400 OR r.warranty_until BETWEEN current_date - 1 AND current_date + 32)
+    UNION SELECT w.user_id FROM refund_watches w JOIN users u ON u.id = w.user_id
+      WHERE u.deleted_at IS NULL AND w.resolved_at IS NULL AND w.returned_on > current_date - 130
+    LIMIT 5000`);
+  return r.rows.map((x) => x.user_id);
+}
+
 export async function runInsightsSweepOnce(): Promise<{ users: number; created: number }> {
   const active = await db.execute<{ user_id: string }>(sql`
     SELECT DISTINCT t.user_id FROM transactions t JOIN users u ON u.id = t.user_id
     WHERE t.created_at > now() - interval '2 days' AND u.deleted_at IS NULL`);
+  if (Date.now() - lastReminderPass >= REMINDER_EVERY_MS) {
+    lastReminderPass = Date.now();
+    const seen = new Set(active.rows.map((r) => r.user_id));
+    for (const id of await reminderUsers()) if (!seen.has(id)) active.rows.push({ user_id: id });
+  }
   let created = 0;
   for (const r of active.rows) {
     try {
@@ -107,6 +226,11 @@ export async function runInsightsSweepOnce(): Promise<{ users: number; created: 
     }
   }
   await sendDigests();
+  try {
+    await sendPeriodDigests();
+  } catch (err) {
+    log("period digests failed", { error: String(err).slice(0, 200) });
+  }
   return { users: active.rows.length, created };
 }
 

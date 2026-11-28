@@ -19,22 +19,22 @@ import { computeSavings } from "../lib/insights/savings.js";
 import { loadItemizedTxns, receiptCounts, receiptSplits } from "../lib/receipts/db.js";
 import { summarizeItemized } from "../lib/receipts/split.js";
 import { recomputeAlertsForUser } from "../lib/insights/sweep.js";
-import { addDays, addMonths, monthEnd, monthOf, monthStart, todayInKolkata } from "../lib/insights/util.js";
+import { addDays, addMonths, monthEnd, monthOf, monthStart } from "../lib/insights/util.js";
+import { todayFor } from "../lib/userTime.js";
+import { loadCardDues, loadUserSplits } from "../lib/toolsDb.js";
+import { spendSplitParts } from "../lib/txnTools.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const recomputeLimiter = keyedLimiter(10, 60 * 60_000);
 
-async function baseCurrency(userId: string): Promise<string> {
-  return (await userBasics(userId)).currency;
-}
-
-async function userBasics(userId: string): Promise<{ currency: string; monthlyBudget: number | null }> {
+async function userBasics(userId: string): Promise<{ currency: string; monthlyBudget: number | null; today: string }> {
   const [u] = await db
-    .select({ c: users.baseCurrency, mb: users.monthlyBudget })
+    .select({ c: users.baseCurrency, mb: users.monthlyBudget, tz: users.timezone })
     .from(users)
     .where(and(eq(users.id, userId), isNull(users.deletedAt)))
     .limit(1);
-  return { currency: u?.c ?? "INR", monthlyBudget: toNum(u?.mb) };
+  const currency = u?.c ?? "INR";
+  return { currency, monthlyBudget: toNum(u?.mb), today: todayFor({ timezone: u?.tz, baseCurrency: currency }) };
 }
 
 export async function dashboardRoutes(fastify: FastifyInstance) {
@@ -54,8 +54,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     },
     async (req) => {
       const userId = req.userId!;
-      const { currency, monthlyBudget } = await userBasics(userId);
-      const today = todayInKolkata();
+      const { currency, monthlyBudget, today } = await userBasics(userId);
       // Household scope: every member's rows (or one member's) in the caller's base currency.
       const scope = await scopeUserIds(userId, req.query.scope, req.query.member);
       const ids = scope.ids;
@@ -80,10 +79,15 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
         Promise.all(ids.map((id) => loadItemizedTxns(id, monthStart(addMonths(month, -11)), monthEnd(month)))),
         receiptCounts(userId),
       ]);
+      // User splits (Transactions > Split) win over receipt item splits for the same transaction.
+      const userSplits = await loadUserSplits(ids);
       const txns = txnLists.flat().sort((a, b) => a.postedOn.localeCompare(b.postedOn) || a.id.localeCompare(b.id));
       const accounts = accountLists.flat();
       const itemized = new Map(itemizedLists.flatMap((m) => [...m]));
-      const data = computeDashboard({ txns, currency, month, today, availableMonths, accounts, splits: receiptSplits(itemized) });
+      const splits = receiptSplits(itemized);
+      const catOf = new Map(txns.map((t) => [t.id, t.category]));
+      for (const [id, parts] of userSplits) if (catOf.has(id)) splits.set(id, spendSplitParts(catOf.get(id)!, parts));
+      const data = computeDashboard({ txns, currency, month, today, availableMonths, accounts, splits });
       // Same rows as the spend totals (base currency, non-superseded), this month only.
       const inBase = new Set(txns.map((t) => t.id));
       const inMonth = [...itemized].filter(([id, t]) => inBase.has(id) && monthOf(t.postedOn) === month).map(([, t]) => t);
@@ -91,7 +95,9 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       let safeToSpend = null;
       let budgetSummary = null;
       let netWorth = null;
+      let upcomingDues: Awaited<ReturnType<typeof loadCardDues>> = [];
       if (!household) {
+        upcomingDues = (await loadCardDues(userId, today)).filter((d) => ["overdue", "due_soon", "upcoming"].includes(d.status) && (d.daysUntilDue ?? 99) <= 14);
         const [budgetRows, nw, recentTxns] = await Promise.all([
           loadBudgets(userId),
           loadNetWorthInputs(userId),
@@ -117,6 +123,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
         safeToSpend,
         budgets: budgetSummary,
         netWorth,
+        upcomingDues,
       };
     },
   );
@@ -175,8 +182,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
 
   app.get("/savings", { preHandler: requireAuth }, async (req) => {
     const userId = req.userId!;
-    const currency = await baseCurrency(userId);
-    const today = todayInKolkata();
+    const { currency, today } = await userBasics(userId);
     const txns = await loadTxns(userId, currency, addDays(today, -400));
     return computeSavings({ txns, currency, today });
   });

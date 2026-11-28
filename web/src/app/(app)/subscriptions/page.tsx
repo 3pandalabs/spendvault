@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, Repeat, TrendingUp } from "lucide-react";
+import { CalendarClock, ExternalLink, Repeat, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { delay, Eyebrow, INSIGHT_TABS, InfoTip, SubTabs } from "@/components/app-ui";
@@ -144,6 +144,19 @@ function Body({ s }: { s: Subscriptions }) {
               <p className="mt-1 text-xs text-fg-muted">
                 {x.occurrences} charges since {fmtDate(x.firstChargedOn)} · last {fmtDate(x.lastChargedOn)}
               </p>
+              {x.cancel ? (
+                <div className="mt-2 text-xs">
+                  <a
+                    href={x.cancel.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 font-medium text-accent-strong hover:underline"
+                  >
+                    How to cancel {x.cancel.name} <ExternalLink className="size-3" aria-hidden />
+                  </a>
+                  {x.cancel.note ? <p className="mt-0.5 text-fg-muted">{x.cancel.note}</p> : null}
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -153,7 +166,7 @@ function Body({ s }: { s: Subscriptions }) {
         <Link href="/alerts" className="text-accent-strong hover:underline">
           Alerts
         </Link>
-        . Next-charge dates are estimates from your past charges.
+        . Next-charge dates are estimates from your past charges. We link to each service&apos;s own account page. SpendVault never cancels anything for you.
       </p>
     </div>
   );

@@ -25,6 +25,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
+      updated="27 November 2026"
       toc={TOC}
       intro={
         <>
@@ -52,7 +53,11 @@ export default function PrivacyPage() {
 
       <Section id="collect" title="2. What we collect">
         <H3>Account details</H3>
-        <p>Your name, email address and a hashed password (we can&apos;t read it). Your settings, such as alert emails and base currency.</p>
+        <p>
+          Your name, email address and a hashed password (we can&apos;t read it). Your settings, such as alert emails, base currency, whether
+          you want the weekly or monthly summary email, and your time zone (taken from your browser so reminders and summaries use your local
+          date).
+        </p>
         <H3>Forwarded statement emails</H3>
         <p>
           Each account gets a private forwarding address. When an email arrives there, we store its sender, subject, date and attachments
@@ -75,7 +80,26 @@ export default function PrivacyPage() {
         <p>
           From those documents we extract transaction date, description, merchant, amount, debit or credit, the card or account it belongs to
           (bank name and last 4 digits only), and statement totals and balances (opening and closing balance, used to check that every line
-          was read and for net worth). We assign each transaction a category, which you can change.
+          was read and for net worth). For credit-card statements we also store the payment due date, minimum payment due and credit limit,
+          to remind you before a payment is due and show how much of your limit you&apos;re using. We assign each transaction a category, which
+          you can change.
+        </p>
+        <H3>Your notes, tags, splits and rules</H3>
+        <p>
+          Tags (including tax tags such as tax-deductible, business or HSA/FSA eligible) and notes you add to transactions or receipt items,
+          how you split a transaction across categories, and the merchant category rules you create.
+        </p>
+        <H3>Returns, warranties and refunds</H3>
+        <p>
+          A return window you set for a receipt, a warranty end date you enter, purchases you mark as returned, and which later credit we
+          matched as the refund. Typical store return windows come from a built-in table; we don&apos;t contact stores.
+        </p>
+        <H3>Savings goals (only if you add them)</H3>
+        <p>Each goal&apos;s name, target amount and date, and the contributions you log. SpendVault doesn&apos;t move money.</p>
+        <H3>Ask SpendVault (only if you use it)</H3>
+        <p>
+          We record that you asked a question and how many AI tokens it used, so we can apply the daily limit and watch costs. We don&apos;t
+          store your questions or the answers.
         </p>
         <H3>Budgets and net worth (only if you add them)</H3>
         <p>
@@ -119,7 +143,12 @@ export default function PrivacyPage() {
             To read your receipts, match each one to the card or bank transaction that paid for it, and show what you bought (including splitting
             a purchase across item categories in your spending breakdown).
           </li>
-          <li>To send you emails you&apos;ve asked for: spending alerts (you can turn these off), password resets and service notices.</li>
+          <li>
+            To send you emails you&apos;ve asked for: spending alerts and reminders (card payments due, return windows closing, missing
+            refunds; you can turn these off), the weekly or monthly summary (which includes your spending totals, top categories, new
+            subscriptions and upcoming card payments; turn it off in Settings), password resets and service notices.
+          </li>
+          <li>To answer questions you ask Ask SpendVault, using only your own data, never a household partner&apos;s or anyone else&apos;s.</li>
           <li>To keep the service secure, prevent abuse and fix problems.</li>
           <li>Your category corrections teach the app how to categorise your own future transactions. They aren&apos;t shared with other users.</li>
         </UL>
@@ -140,7 +169,9 @@ export default function PrivacyPage() {
           <li>
             <strong>Anthropic, PBC</strong> (USA): when AI extraction is enabled, statement pages that our built-in parsers can&apos;t read,
             descriptions we can&apos;t categorise, and your receipts (photos, PDFs and receipt emails) are sent to Anthropic&apos;s API to
-            extract transactions and receipt details. Anthropic processes this data under commercial terms that don&apos;t allow it to train
+            extract transactions and receipt details. When you use Ask SpendVault, your question (and the last few messages of that
+            conversation) plus the results of the fixed queries needed to answer it, drawn only from your own data (for example totals,
+            merchants, dates, amounts and receipt items), are sent to Anthropic to write the answer. Anthropic processes this data under commercial terms that don&apos;t allow it to train
             models on our API data.
           </li>
           <li>
@@ -148,7 +179,8 @@ export default function PrivacyPage() {
             WhatsApp number pass through Meta.
           </li>
           <li>
-            <strong>Resend, Inc.</strong> (USA): delivers our emails (alerts and password resets).
+            <strong>Google LLC</strong> (USA, Gmail): sends our emails (alerts, reminders, summaries and password resets).{" "}
+            <strong>Resend, Inc.</strong> (USA) delivers them instead if our main email service is unavailable.
           </li>
         </UL>
         <p>

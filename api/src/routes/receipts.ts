@@ -4,7 +4,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { RECEIPT_STATUSES, documents, receiptItems, receipts, transactions } from "../db/schema.js";
+import { RECEIPT_STATUSES, documents, receiptItems, receipts, refundWatches, transactions, users } from "../db/schema.js";
 import { env } from "../env.js";
 import { keyedLimiter } from "../lib/clientKey.js";
 import { decrypt } from "../lib/crypto.js";
@@ -23,6 +23,18 @@ import {
   type ReceiptRow,
 } from "../lib/receipts/db.js";
 import { transactionView } from "./transactions.js";
+import { MAX_TAG_LENGTH, MAX_TAGS, normalizeTags } from "../lib/txnTools.js";
+import { suggestHsaFsa } from "../lib/tax.js";
+import { returnWindow, RETURN_POLICIES } from "../lib/receipts/returns.js";
+import { priceHeadline, priceTracks } from "../lib/receipts/prices.js";
+import { num, toNum } from "../lib/money.js";
+import { todayFor } from "../lib/userTime.js";
+import { loadUserSplits, refundWatchViews, syncRefundWatches } from "../lib/toolsDb.js";
+
+async function userToday(userId: string): Promise<string> {
+  const [u] = await db.select({ timezone: users.timezone, baseCurrency: users.baseCurrency }).from(users).where(eq(users.id, userId)).limit(1);
+  return todayFor(u ?? {});
+}
 
 // Receipts (api/ROUTES.md "Receipts") + GET /transactions/:id, the
 // transaction detail view that carries the linked receipt's line items.
@@ -58,6 +70,13 @@ export async function receiptDetail(userId: string, id: string) {
     .where(and(eq(receiptItems.receiptId, own.r.id), eq(receiptItems.userId, userId)))
     .orderBy(asc(receiptItems.position));
   let transaction = null;
+  const today = await userToday(userId);
+  const watches = await db
+    .select()
+    .from(refundWatches)
+    .where(and(eq(refundWatches.userId, userId), own.r.transactionId ? sql`(${refundWatches.receiptId} = ${own.r.id}::uuid OR ${refundWatches.transactionId} = ${own.r.transactionId}::uuid)` : eq(refundWatches.receiptId, own.r.id)))
+    .limit(1);
+  const refund = watches.length ? (await refundWatchViews(userId, watches, today))[0] : null;
   if (own.r.transactionId) {
     const [t] = await db
       .select()
@@ -66,7 +85,13 @@ export async function receiptDetail(userId: string, id: string) {
       .limit(1);
     transaction = t ? transactionView(t, own.r.id) : null;
   }
-  return { ...receiptView(own.r, own.d, items.length), items: items.map(receiptItemView), transaction };
+  return {
+    ...receiptView(own.r, own.d, items.length),
+    items: items.map((i) => ({ ...receiptItemView(i), hsaSuggested: suggestHsaFsa(i, own.r.merchant) })),
+    transaction,
+    returnWindow: returnWindow({ merchant: own.r.merchant, purchasedOn: own.r.purchasedOn, returnDays: own.r.returnDays }, today),
+    refund,
+  };
 }
 
 // Cursor = base64url "createdAtISO|id" (same scheme as /documents).
@@ -122,6 +147,72 @@ export async function receiptRoutes(fastify: FastifyInstance) {
       };
     },
   );
+
+  // ---------------------------------------------------------------- price tracker + return windows
+
+  app.get(
+    "/receipts/prices",
+    { preHandler: requireAuth, schema: { querystring: z.object({ q: z.string().trim().max(60).optional(), limit: z.coerce.number().int().min(1).max(100).default(30) }) } },
+    async (req) => {
+      const userId = req.userId!;
+      const rows = await db
+        .select({ i: receiptItems, merchant: receipts.merchant, purchasedOn: receipts.purchasedOn, currency: receipts.currency })
+        .from(receiptItems)
+        .innerJoin(receipts, eq(receipts.id, receiptItems.receiptId))
+        .where(and(eq(receiptItems.userId, userId), eq(receipts.userId, userId), isNotNull(receipts.purchasedOn), sql`${receipts.purchasedOn} > current_date - 730`))
+        .limit(10_000);
+      const q = req.query.q?.toLowerCase();
+      const tracks = priceTracks(
+        rows
+          .filter((r) => !q || r.i.name.toLowerCase().includes(q))
+          .map((r) => ({
+            receiptId: r.i.receiptId,
+            merchant: r.merchant,
+            purchasedOn: r.purchasedOn,
+            name: r.i.name,
+            quantity: r.i.quantity === null ? null : Number(r.i.quantity),
+            unitPrice: toNum(r.i.unitPrice),
+            lineTotal: num(r.i.lineTotal),
+            currency: r.currency,
+          })),
+        { limit: req.query.limit },
+      );
+      return { items: tracks.map((t) => ({ ...t, headline: priceHeadline(t) })) };
+    },
+  );
+
+  app.get("/receipts/returns", { preHandler: requireAuth }, async (req) => {
+    const userId = req.userId!;
+    const today = await userToday(userId);
+    const [rows, watches] = await Promise.all([
+      db
+        .select({ r: receipts })
+        .from(receipts)
+        .where(and(eq(receipts.userId, userId), sql`(${receipts.purchasedOn} > current_date - 400 OR ${receipts.warrantyUntil} >= current_date - 1)`))
+        .orderBy(desc(receipts.purchasedOn))
+        .limit(500),
+      syncRefundWatches(userId),
+    ]);
+    const returnedReceipts = new Set(watches.map((w) => w.receiptId).filter(Boolean));
+    const returnedTxns = new Set(watches.map((w) => w.transactionId).filter(Boolean));
+    const windows = rows
+      .map(({ r }) => ({ r, w: returnWindow({ merchant: r.merchant, purchasedOn: r.purchasedOn, returnDays: r.returnDays }, today) }))
+      .filter(({ r, w }) => w.open && !returnedReceipts.has(r.id) && !(r.transactionId && returnedTxns.has(r.transactionId)))
+      .sort((a, b) => (a.w.closesOn ?? "").localeCompare(b.w.closesOn ?? ""))
+      .slice(0, 50)
+      .map(({ r, w }) => ({ receiptId: r.id, merchant: r.merchant, purchasedOn: r.purchasedOn, total: toNum(r.total), currency: r.currency, window: w }));
+    const warranties = rows
+      .filter(({ r }) => r.warrantyUntil && r.warrantyUntil >= today)
+      .sort((a, b) => a.r.warrantyUntil!.localeCompare(b.r.warrantyUntil!))
+      .slice(0, 50)
+      .map(({ r }) => ({ receiptId: r.id, merchant: r.merchant, purchasedOn: r.purchasedOn, total: toNum(r.total), currency: r.currency, warrantyUntil: r.warrantyUntil! }));
+    return {
+      returnWindows: windows,
+      warranties,
+      refunds: await refundWatchViews(userId, watches, today),
+      policies: RETURN_POLICIES.map((p) => ({ key: p.key, name: p.name, days: p.days, note: p.note ?? null })),
+    };
+  });
 
   app.post("/receipts/rematch", { preHandler: requireAuth }, async (req, reply) => {
     if (!rematchLimiter(req.userId!)) return reply.code(429).send({ error: "rate_limited" });
@@ -182,6 +273,8 @@ export async function receiptRoutes(fastify: FastifyInstance) {
             total: z.number().finite().positive().max(1e10).optional(),
             tax: z.number().finite().nonnegative().max(1e10).nullable().optional(),
             currency: z.enum(["INR", "USD"]).optional(),
+            returnDays: z.number().int().min(0).max(3650).nullable().optional(),
+            warrantyUntil: z.string().regex(DATE).nullable().optional(),
           })
           .refine((b) => Object.keys(b).length > 0, "empty patch"),
       },
@@ -201,6 +294,8 @@ export async function receiptRoutes(fastify: FastifyInstance) {
             ...(b.total !== undefined ? { total: toDbAmount(b.total) } : {}),
             ...(b.tax !== undefined ? { tax: b.tax === null ? null : toDbAmount(b.tax) } : {}),
             ...(b.currency ? { currency: b.currency } : {}),
+            ...(b.returnDays !== undefined ? { returnDays: b.returnDays } : {}),
+            ...(b.warrantyUntil !== undefined ? { warrantyUntil: b.warrantyUntil } : {}),
             ...(becomesManual ? { status: "manual" as const, parser: "manual", error: null } : {}),
             updatedAt: new Date(),
           })
@@ -224,7 +319,12 @@ export async function receiptRoutes(fastify: FastifyInstance) {
       preHandler: requireAuth,
       schema: {
         params: z.object({ id: z.string().uuid(), itemId: z.string().uuid() }),
-        body: z.object({ category: z.string().refine(isCategory, "unknown category") }),
+        body: z
+          .object({
+            category: z.string().refine(isCategory, "unknown category").optional(),
+            tags: z.array(z.string().max(MAX_TAG_LENGTH + 10)).max(MAX_TAGS * 2).optional(),
+          })
+          .refine((b) => b.category !== undefined || b.tags !== undefined, "empty patch"),
       },
     },
     async (req, reply) => {
@@ -233,7 +333,10 @@ export async function receiptRoutes(fastify: FastifyInstance) {
       if (!own) return reply.code(404).send(notFound);
       const done = await db
         .update(receiptItems)
-        .set({ category: req.body.category, categoryLocked: true })
+        .set({
+          ...(req.body.category ? { category: req.body.category, categoryLocked: true } : {}),
+          ...(req.body.tags !== undefined ? { tags: normalizeTags(req.body.tags) } : {}),
+        })
         .where(and(eq(receiptItems.id, req.params.itemId), eq(receiptItems.receiptId, own.r.id), eq(receiptItems.userId, userId)))
         .returning({ id: receiptItems.id });
       if (!done.length) return reply.code(404).send(notFound);
@@ -348,7 +451,11 @@ export async function receiptRoutes(fastify: FastifyInstance) {
       .where(and(eq(receipts.transactionId, t.id), eq(receipts.userId, userId)))
       .limit(1);
     const receipt = r ? await receiptDetail(userId, r.id) : null;
-    return { ...transactionView(t, r?.id ?? null), receipt };
+    const splits = (await loadUserSplits([userId], [t.id])).get(t.id) ?? [];
+    const today = await userToday(userId);
+    const watch = await db.select().from(refundWatches).where(and(eq(refundWatches.userId, userId), eq(refundWatches.transactionId, t.id))).limit(1);
+    const refund = watch.length ? (await refundWatchViews(userId, watch, today))[0] : (receipt?.refund ?? null);
+    return { ...transactionView(t, r?.id ?? null, splits.length > 0), receipt, splits, refund };
   });
 }
 

@@ -6,7 +6,9 @@ import { z } from "zod";
 import { markUserDeleted, requireAuth } from "../auth/plugin.js";
 import { verifySecret } from "../auth/password.js";
 import { db } from "../db/index.js";
-import { accounts, alerts, documents, forwardingConfirmations, receiptItems, receipts, transactions, users } from "../db/schema.js";
+import { accounts, alerts, categoryRules, documents, forwardingConfirmations, goalContributions, receiptItems, receipts, refundWatches, savingsGoals, transactionSplits, transactions, users } from "../db/schema.js";
+import { isValidTimeZone } from "../lib/userTime.js";
+import { isTaxTag, TAX_TAG_KEYS } from "../lib/tax.js";
 import { env } from "../env.js";
 import { keyedLimiter } from "../lib/clientKey.js";
 import { BASE_CURRENCIES } from "../lib/currency.js";
@@ -102,6 +104,9 @@ export async function meRoutes(fastify: FastifyInstance) {
             deleteOriginals: z.boolean(),
             baseCurrency: z.enum(BASE_CURRENCIES),
             monthlyBudget: z.number().finite().min(0).max(1e11).nullable(),
+            timezone: z.string().max(64).refine(isValidTimeZone, "unknown time zone").nullable(),
+            digestWeekly: z.boolean(),
+            digestMonthly: z.boolean(),
           })
           .partial()
           .strict(),
@@ -148,7 +153,7 @@ export async function meRoutes(fastify: FastifyInstance) {
   app.get("/me/export", { preHandler: requireAuth }, async (req, reply) => {
     if (!exportLimiter(req.userId!)) return reply.code(429).send({ error: "rate_limited" });
     const userId = req.userId!;
-    const [txns, accts, counts, alertRows, receiptRows, itemRows] = await Promise.all([
+    const [txns, accts, counts, alertRows, receiptRows, itemRows, extra] = await Promise.all([
       db
         .select()
         .from(transactions)
@@ -166,7 +171,15 @@ export async function meRoutes(fastify: FastifyInstance) {
         .where(eq(receipts.userId, userId))
         .orderBy(desc(receipts.createdAt)),
       db.select().from(receiptItems).where(eq(receiptItems.userId, userId)).orderBy(receiptItems.receiptId, receiptItems.position),
+      Promise.all([
+        db.select().from(transactionSplits).where(eq(transactionSplits.userId, userId)),
+        db.select().from(refundWatches).where(eq(refundWatches.userId, userId)),
+        db.select().from(savingsGoals).where(eq(savingsGoals.userId, userId)),
+        db.select().from(goalContributions).where(eq(goalContributions.userId, userId)),
+        db.select().from(categoryRules).where(eq(categoryRules.userId, userId)),
+      ]),
     ]);
+    const [splitRows, watchRows, goalRows, contribRows, ruleRows] = extra;
     const itemsBy = new Map<string, (typeof itemRows)[number][]>();
     for (const i of itemRows) itemsBy.set(i.receiptId, [...(itemsBy.get(i.receiptId) ?? []), i]);
     const receiptByTxn = new Map(receiptRows.filter((x) => x.r.transactionId).map((x) => [x.r.transactionId!, x.r.id]));
@@ -180,6 +193,17 @@ export async function meRoutes(fastify: FastifyInstance) {
         const items = itemsBy.get(r.id) ?? [];
         return { ...receiptView(r, d, items.length), items: items.map(receiptItemView) };
       }),
+      splits: splitRows.map((s) => ({ transactionId: s.transactionId, category: s.category, amount: num(s.amount) })),
+      refunds: watchRows.map((w) => ({ id: w.id, transactionId: w.transactionId, receiptId: w.receiptId, merchant: w.merchant, amount: num(w.amount), currency: w.currency, returnedOn: w.returnedOn, refundTransactionId: w.refundTransactionId })),
+      goals: goalRows.map((g) => ({
+        id: g.id,
+        name: g.name,
+        targetAmount: num(g.targetAmount),
+        targetDate: g.targetDate,
+        currency: g.currency,
+        contributions: contribRows.filter((c) => c.goalId === g.id).map((c) => ({ amount: num(c.amount), contributedOn: c.contributedOn, note: c.note })),
+      })),
+      categoryRules: ruleRows.map((r) => ({ merchant: r.merchant, category: r.category })),
     };
   });
 
@@ -199,11 +223,11 @@ export async function meRoutes(fastify: FastifyInstance) {
     const label = new Map(accts.map((a) => [a.id, accountLabel(a)]));
     const receiptOf = new Map(links.filter((l) => l.txn).map((l) => [l.txn!, l.id]));
     const csv = toCsv(
-      ["date", "merchant", "description", "category", "amount", "direction", "signed_amount", "currency", "account", "source", "receipt_id", "transaction_id"],
+      ["date", "merchant", "description", "category", "amount", "direction", "signed_amount", "currency", "account", "source", "tags", "note", "receipt_id", "transaction_id"],
       rows.map((t) => {
         const amt = num(t.amount);
         return [t.postedOn, t.merchant, t.descriptionRaw, categoryLabel(t.category), amt, t.direction, t.direction === "debit" ? -amt : amt, t.currency,
-          t.accountId ? (label.get(t.accountId) ?? "") : "", t.sourceKind, receiptOf.get(t.id) ?? "", t.id];
+          t.accountId ? (label.get(t.accountId) ?? "") : "", t.sourceKind, (t.tags ?? []).join(" "), t.note ?? "", receiptOf.get(t.id) ?? "", t.id];
       }),
     );
     return csvReply(reply, `spendvault-transactions-${new Date().toISOString().slice(0, 10)}.csv`, csv);
@@ -225,6 +249,47 @@ export async function meRoutes(fastify: FastifyInstance) {
     );
     return csvReply(reply, `spendvault-receipt-items-${new Date().toISOString().slice(0, 10)}.csv`, csv);
   });
+
+  // Year-end tax export: transactions and receipt items carrying a tax tag.
+  app.get(
+    "/me/export/tax.csv",
+    {
+      preHandler: requireAuth,
+      schema: { querystring: z.object({ year: z.coerce.number().int().min(2000).max(2100), tag: z.string().max(40).optional() }) },
+    },
+    async (req, reply) => {
+      if (!exportLimiter(req.userId!)) return reply.code(429).send({ error: "rate_limited" });
+      const userId = req.userId!;
+      const { year, tag } = req.query;
+      if (tag && !isTaxTag(tag)) return reply.code(400).send({ error: "invalid_tag", code: "VALIDATION" });
+      const tags = tag ? [tag] : [...TAX_TAG_KEYS];
+      const from = `${year}-01-01`;
+      const to = `${year}-12-31`;
+      const tagArr = sql`ARRAY[${sql.join(tags.map((t) => sql`${t}`), sql`, `)}]::text[]`;
+      const [txns, items] = await Promise.all([
+        db
+          .select()
+          .from(transactions)
+          .where(and(eq(transactions.userId, userId), isNull(transactions.supersededBy), sql`${transactions.postedOn} BETWEEN ${from}::date AND ${to}::date`, sql`${transactions.tags} && ${tagArr}`))
+          .orderBy(transactions.postedOn),
+        db
+          .select({ i: receiptItems, r: receipts })
+          .from(receiptItems)
+          .innerJoin(receipts, eq(receipts.id, receiptItems.receiptId))
+          .where(and(eq(receiptItems.userId, userId), sql`${receipts.purchasedOn} BETWEEN ${from}::date AND ${to}::date`, sql`${receiptItems.tags} && ${tagArr}`))
+          .orderBy(receipts.purchasedOn, receiptItems.position),
+      ]);
+      const pick = (t: string[] | null) => (t ?? []).filter(isTaxTag).join(" ");
+      const csv = toCsv(
+        ["type", "date", "merchant", "description", "category", "amount", "currency", "tax_tags", "note", "transaction_id", "receipt_id"],
+        [
+          ...txns.map((t) => ["transaction", t.postedOn, t.merchant, t.descriptionRaw, categoryLabel(t.category), t.direction === "debit" ? num(t.amount) : -num(t.amount), t.currency, pick(t.tags), t.note ?? "", t.id, ""]),
+          ...items.map(({ i, r }) => ["receipt_item", r.purchasedOn ?? "", r.merchant ?? "", i.name, categoryLabel(i.category), num(i.lineTotal), r.currency, pick(i.tags), "", r.transactionId ?? "", r.id]),
+        ],
+      );
+      return csvReply(reply, `spendvault-tax-${year}${tag ? `-${tag}` : ""}.csv`, csv);
+    },
+  );
 
   app.get("/setup/forwarding", { preHandler: requireAuth }, async (req, reply) => {
     const u = await loadUser(req.userId!);

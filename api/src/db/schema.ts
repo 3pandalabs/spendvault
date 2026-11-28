@@ -40,6 +40,12 @@ export const users = pgTable("users", {
   lastDigestAt: timestamp("last_digest_at", { withTimezone: true }),
   // Overall monthly spending budget (safe-to-spend basis). drizzle/0002_planning.sql.
   monthlyBudget: numeric("monthly_budget", { precision: 14, scale: 2 }),
+  // 0003: IANA time zone from the browser ("today" for dues, digests); null = by currency.
+  timezone: text("timezone"),
+  digestWeekly: boolean("digest_weekly").notNull().default(false),
+  digestMonthly: boolean("digest_monthly").notNull().default(true),
+  lastWeeklyDigest: text("last_weekly_digest"), // week start YYYY-MM-DD last sent
+  lastMonthlyDigest: text("last_monthly_digest"), // YYYY-MM last sent
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
@@ -140,6 +146,10 @@ export const documents = pgTable(
     closingBalance: numeric("closing_balance", { precision: 14, scale: 2 }),
     extractedCredits: numeric("extracted_credits", { precision: 14, scale: 2 }),
     reconcileDiff: numeric("reconcile_diff", { precision: 14, scale: 2 }),
+    // 0003: card statements: payment due date, minimum due, credit limit.
+    dueDate: date("due_date"),
+    minimumDue: numeric("minimum_due", { precision: 14, scale: 2 }),
+    creditLimit: numeric("credit_limit", { precision: 14, scale: 2 }),
     txnCount: integer("txn_count").notNull().default(0),
     parser: text("parser"), // e.g. "rules:statement", "llm", "csv", "rules:alert"
     error: text("error"),
@@ -172,6 +182,9 @@ export const transactions = pgTable(
     supersededBy: uuid("superseded_by"),
     // The user set the category by hand; recategorization never overrides it.
     categoryLocked: boolean("category_locked").notNull().default(false),
+    // 0003: user tags (incl. tax tags, lib/tax.ts) and a free-text note.
+    tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+    note: text("note"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -202,6 +215,12 @@ export const ALERT_KINDS = [
   "duplicate",
   "new_subscription",
   "over_budget",
+  // 0003
+  "card_due",
+  "return_window",
+  "warranty",
+  "refund_missing",
+  "trial_converted",
 ] as const;
 export type AlertKind = (typeof ALERT_KINDS)[number];
 
@@ -259,6 +278,9 @@ export const receipts = pgTable(
     matchedAt: timestamp("matched_at", { withTimezone: true }),
     // Transactions the user unlinked from this receipt: auto-match skips them.
     rejectedTxnIds: uuid("rejected_txn_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    // 0003: return window override in days (null = typical for the merchant, 0 = final sale) + warranty end.
+    returnDays: integer("return_days"),
+    warrantyUntil: date("warranty_until"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: createdAt(),
   },
@@ -282,6 +304,7 @@ export const receiptItems = pgTable(
     lineTotal: numeric("line_total", { precision: 14, scale: 2 }).notNull(),
     category: text("category").notNull(),
     categoryLocked: boolean("category_locked").notNull().default(false),
+    tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
     createdAt: createdAt(),
   },
   (t) => [index("receipt_items_receipt").on(t.receiptId, t.position)],
@@ -355,4 +378,85 @@ export const householdInvites = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("household_invites_token").on(t.tokenHash), index("household_invites_household").on(t.householdId)],
+);
+
+// ---------------------------------------------------------------- tools (0003)
+
+// A user split of one transaction across categories (parts sum to its amount).
+export const transactionSplits = pgTable(
+  "transaction_splits",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    category: text("category").notNull(),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("transaction_splits_txn").on(t.transactionId, t.position), index("transaction_splits_user").on(t.userId)],
+);
+
+// "I returned this": waits for the refund credit (lib/insights/refunds.ts).
+export const refundWatches = pgTable(
+  "refund_watches",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    transactionId: uuid("transaction_id").references(() => transactions.id, { onDelete: "set null" }),
+    receiptId: uuid("receipt_id").references(() => receipts.id, { onDelete: "set null" }),
+    merchant: text("merchant").notNull(),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    currency: text("currency").notNull(),
+    returnedOn: date("returned_on").notNull(),
+    refundTransactionId: uuid("refund_transaction_id").references(() => transactions.id, { onDelete: "set null" }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("refund_watches_user").on(t.userId, t.createdAt)],
+);
+
+export const savingsGoals = pgTable(
+  "savings_goals",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    targetAmount: numeric("target_amount", { precision: 14, scale: 2 }).notNull(),
+    targetDate: date("target_date"),
+    currency: text("currency").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("savings_goals_user").on(t.userId)],
+);
+
+export const goalContributions = pgTable(
+  "goal_contributions",
+  {
+    id: id(),
+    goalId: uuid("goal_id").notNull().references(() => savingsGoals.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(), // negative = withdrawal
+    contributedOn: date("contributed_on").notNull(),
+    note: text("note"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("goal_contributions_goal").on(t.goalId, t.contributedOn)],
+);
+
+// Ask SpendVault token usage (never the question or the answer).
+export const askUsage = pgTable(
+  "ask_usage",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    toolCalls: integer("tool_calls").notNull().default(0),
+    ok: boolean("ok").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [index("ask_usage_user_created").on(t.userId, t.createdAt)],
 );

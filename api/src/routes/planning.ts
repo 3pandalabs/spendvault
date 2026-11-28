@@ -15,7 +15,8 @@ import { loadBudgets, loadNetWorthInputs, loadTxns, netWorthItemView } from "../
 import { computeNetWorth } from "../lib/insights/networth.js";
 import { computeSubscriptions } from "../lib/insights/subscriptions.js";
 import { recomputeAlertsForUser } from "../lib/insights/sweep.js";
-import { addDays, addMonths, monthEnd, monthOf, monthStart, round2, todayInKolkata } from "../lib/insights/util.js";
+import { addDays, addMonths, monthEnd, monthOf, monthStart, round2 } from "../lib/insights/util.js";
+import { todayFor } from "../lib/userTime.js";
 import { toDbAmount, toNum } from "../lib/money.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -25,12 +26,12 @@ const inviteLimiter = keyedLimiter(10, 60 * 60_000);
 
 async function userBasics(userId: string) {
   const [u] = await db
-    .select({ baseCurrency: users.baseCurrency, monthlyBudget: users.monthlyBudget })
+    .select({ baseCurrency: users.baseCurrency, monthlyBudget: users.monthlyBudget, timezone: users.timezone })
     .from(users)
     .where(and(eq(users.id, userId), isNull(users.deletedAt)))
     .limit(1);
   if (!u) throw notFound();
-  return { currency: u.baseCurrency, monthlyBudget: toNum(u.monthlyBudget) };
+  return { currency: u.baseCurrency, monthlyBudget: toNum(u.monthlyBudget), today: todayFor(u) };
 }
 
 /** Budget changes may cross a line right now: refresh alerts in the background. */
@@ -43,8 +44,7 @@ export async function planningRoutes(fastify: FastifyInstance) {
   // ---------------------------------------------------------------- subscriptions
 
   app.get("/subscriptions", { preHandler: requireAuth }, async (req) => {
-    const { currency } = await userBasics(req.userId!);
-    const today = todayInKolkata();
+    const { currency, today } = await userBasics(req.userId!);
     const txns = await loadTxns(req.userId!, currency, addDays(today, -400));
     return computeSubscriptions({ txns, currency, today });
   });
@@ -52,8 +52,7 @@ export async function planningRoutes(fastify: FastifyInstance) {
   // ---------------------------------------------------------------- budgets
 
   async function budgetsView(userId: string, month: string) {
-    const { currency, monthlyBudget } = await userBasics(userId);
-    const today = todayInKolkata();
+    const { currency, monthlyBudget, today } = await userBasics(userId);
     const cur = monthOf(today);
     const [lo, hi] = month < cur ? [month, cur] : [cur, month];
     // The month shown plus the 3 complete months before today (suggestions).
@@ -74,7 +73,7 @@ export async function planningRoutes(fastify: FastifyInstance) {
   app.get(
     "/budgets",
     { preHandler: requireAuth, schema: { querystring: z.object({ month: z.string().regex(MONTH).optional() }) } },
-    async (req) => budgetsView(req.userId!, req.query.month ?? monthOf(todayInKolkata())),
+    async (req) => budgetsView(req.userId!, req.query.month ?? monthOf((await userBasics(req.userId!)).today)),
   );
 
   app.put(
@@ -88,7 +87,7 @@ export async function planningRoutes(fastify: FastifyInstance) {
         .values({ userId: req.userId!, category: cat, amount: toDbAmount(req.body.amount) })
         .onConflictDoUpdate({ target: [budgets.userId, budgets.category], set: { amount: toDbAmount(req.body.amount), updatedAt: new Date() } });
       refreshAlerts(req.userId!, (o, m) => req.log.warn(o, m));
-      return budgetsView(req.userId!, monthOf(todayInKolkata()));
+      return budgetsView(req.userId!, monthOf((await userBasics(req.userId!)).today));
     },
   );
 
@@ -116,7 +115,7 @@ export async function planningRoutes(fastify: FastifyInstance) {
         .set({ monthlyBudget: amt === null || amt === 0 ? null : toDbAmount(amt) })
         .where(eq(users.id, req.userId!));
       refreshAlerts(req.userId!, (o, m) => req.log.warn(o, m));
-      return budgetsView(req.userId!, monthOf(todayInKolkata()));
+      return budgetsView(req.userId!, monthOf((await userBasics(req.userId!)).today));
     },
   );
 

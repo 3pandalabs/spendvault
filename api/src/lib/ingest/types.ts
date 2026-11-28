@@ -25,6 +25,10 @@ export type ParseResult = {
   previousBalance?: number | null;
   totalDue?: number | null;
   closingBalance?: number | null;
+  /** Credit cards (0003): payment due date, minimum payment due, credit limit. */
+  dueDate?: string | null;
+  minimumDue?: number | null;
+  creditLimit?: number | null;
   txns: ParsedTxn[];
 };
 

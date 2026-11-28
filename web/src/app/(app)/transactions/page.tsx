@@ -1,6 +1,6 @@
 "use client";
 
-import { ListOrdered, Lock, Search, X } from "lucide-react";
+import { ListOrdered, Lock, NotebookPen, Search, SplitSquareHorizontal, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -9,12 +9,13 @@ import { CategoryChip } from "@/components/bits";
 import { EmptyState, ErrorText, LoadError, Loading, PageHeader, Spinner, selectClass } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { errorMessage, getHousehold, listAccounts, listTransactions, updateTransaction } from "@/lib/api";
+import { errorMessage, getHousehold, listAccounts, listTags, listTransactions, updateTransaction } from "@/lib/api";
+import { TagChip } from "@/components/tools";
 import { useSession } from "@/lib/session";
 import { CATEGORY_KEYS, categoryColor, categoryLabel } from "@/lib/categories";
 import { fmtCount, fmtDate, fmtMonth, moneyExact, monthRange } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
-import type { Account, CategoryKey, Direction, Transaction, TransactionFilter } from "@/lib/types";
+import { TAX_TAGS, type Account, type CategoryKey, type Direction, type Transaction, type TransactionFilter } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const PAGE = 100;
@@ -46,6 +47,7 @@ function Transactions() {
     category: params.get("category") ?? undefined,
     accountId: params.get("accountId") ?? undefined,
     q: params.get("q") ?? undefined,
+    tag: params.get("tag") ?? undefined,
     direction: (params.get("direction") as Direction | null) ?? undefined,
     documentId: params.get("documentId") ?? undefined,
     scope: params.get("scope") === "household" ? "household" : undefined,
@@ -64,6 +66,9 @@ function Transactions() {
 
   const { me } = useSession();
   const accounts = useAsync(listAccounts, "accounts");
+  const tags = useAsync(listTags, "tags");
+  const tagOptions = [...new Set([...TAX_TAGS.map((t) => t.tag as string), ...(tags.data?.items ?? []).map((t) => t.tag), ...(filter.tag ? [filter.tag] : [])])];
+  const taxLabel = new Map<string, string>(TAX_TAGS.map((t) => [t.tag, t.label]));
   const inHousehold = Boolean(me.features?.household && me.household);
   const household = useAsync(getHousehold, inHousehold ? "household" : null);
   const members = household.data?.household?.members ?? [];
@@ -142,7 +147,7 @@ function Transactions() {
           </p>
         ) : null}
         <SearchBox initial={filter.q ?? ""} onSearch={(q) => setFilter({ q: q || undefined })} key={filter.q ?? ""} />
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
           <select
             aria-label="Month"
             className={selectClass}
@@ -196,6 +201,14 @@ function Transactions() {
             <option value="">Money in and out</option>
             <option value="debit">Money out</option>
             <option value="credit">Money in</option>
+          </select>
+          <select aria-label="Tag" className={selectClass} value={filter.tag ?? ""} onChange={(e) => setFilter({ tag: e.target.value || undefined })}>
+            <option value="">Any tag</option>
+            {tagOptions.map((t) => (
+              <option key={t} value={t}>
+                {taxLabel.get(t) ?? `#${t}`}
+              </option>
+            ))}
           </select>
         </div>
         <details className="text-sm" open={monthValue === "custom"}>
@@ -302,8 +315,8 @@ function SearchBox({ initial, onSearch }: { initial: string; onSearch: (q: strin
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-muted" aria-hidden />
         <Input
           type="search"
-          aria-label="Search merchant or description"
-          placeholder="Search merchant or description"
+          aria-label="Search merchant, description or note"
+          placeholder="Search merchant, description or note"
           className="pl-9"
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -370,11 +383,28 @@ function TxnRow({
                 <ReceiptPill />
               </Link>
             ) : null}
+            {t.hasSplit ? (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-violet-400/30 bg-violet-400/10 px-1.5 py-px text-[10px] font-medium tracking-wide text-violet-200 uppercase" title="Split across categories">
+                <SplitSquareHorizontal className="size-3" aria-hidden /> Split
+              </span>
+            ) : null}
+            {t.note ? (
+              <span title={t.note} className="shrink-0 text-fg-muted">
+                <NotebookPen className="size-3.5" aria-label={`Note: ${t.note}`} />
+              </span>
+            ) : null}
           </p>
           <p className="truncate text-xs text-fg-muted" title={t.descriptionRaw}>
             {account && !owner ? `${accountName(account)} · ` : ""}
             {t.descriptionRaw}
           </p>
+          {t.tags?.length ? (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {t.tags.map((tag) => (
+                <TagChip key={tag} tag={tag} />
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="order-4 col-span-2 flex min-w-0 items-center gap-2 md:order-none md:col-span-1">
           {owner ? (

@@ -40,6 +40,10 @@ export type User = {
   alertEmails: boolean;
   deleteOriginals: boolean;
   monthlyBudget: number | null;
+  /** IANA zone the API uses for "today" (null = by currency). */
+  timezone?: string | null;
+  digestWeekly?: boolean;
+  digestMonthly?: boolean;
   createdAt: string;
 };
 
@@ -60,6 +64,9 @@ export type MePatch = {
   deleteOriginals?: boolean;
   baseCurrency?: Currency;
   monthlyBudget?: number | null;
+  timezone?: string | null;
+  digestWeekly?: boolean;
+  digestMonthly?: boolean;
 };
 
 export type ForwardingConfirmation = {
@@ -127,6 +134,9 @@ export type Document = {
   extractedCredits?: number | null;
   /** closing − (opening ± what we read). Card: positive = charges we didn't read. */
   reconcileDifference?: number | null;
+  dueDate?: string | null;
+  minimumDue?: number | null;
+  creditLimit?: number | null;
   txnCount: number;
   parser: string | null;
   error: string | null;
@@ -168,11 +178,20 @@ export type Transaction = {
   sourceKind: "statement" | "alert" | "csv";
   categoryLocked: boolean;
   receiptId: string | null;
+  tags?: string[];
+  note?: string | null;
+  hasSplit?: boolean;
   /** Household view only: whose transaction this is. */
   ownerId?: string;
 };
 
-export type TransactionDetail = Transaction & { receipt: ReceiptDetail | null };
+export type SplitPart = { category: CategoryKey; amount: number };
+
+export type TransactionDetail = Transaction & { receipt: ReceiptDetail | null; splits?: SplitPart[]; refund?: RefundWatch | null };
+
+export type TransactionPatch = { category?: string; applyToMerchant?: boolean; tags?: string[]; note?: string | null };
+
+export type CategoryRule = { id: string; merchant: string; category: CategoryKey; createdAt: string };
 
 export type TransactionFilter = {
   from?: string;
@@ -180,6 +199,7 @@ export type TransactionFilter = {
   category?: string;
   accountId?: string;
   q?: string;
+  tag?: string;
   direction?: Direction | "";
   documentId?: string;
   scope?: "me" | "household";
@@ -200,7 +220,12 @@ export type AlertKind =
   | "fee"
   | "duplicate"
   | "new_subscription"
-  | "over_budget";
+  | "over_budget"
+  | "card_due"
+  | "return_window"
+  | "warranty"
+  | "refund_missing"
+  | "trial_converted";
 
 export type Alert = {
   id: string;
@@ -242,6 +267,8 @@ export type Dashboard = {
   safeToSpend?: SafeToSpend | null;
   budgets?: { count: number; over: number; near: number; top: BudgetLine[] } | null;
   netWorth?: { netWorth: number; assets: number; liabilities: number; asOf: string | null } | null;
+  /** Unpaid cards due within 14 days or overdue ([] in household view; absent on an older API). */
+  upcomingDues?: CardDue[];
 };
 
 export type SafeToSpend = {
@@ -272,6 +299,8 @@ export type SubscriptionItem = {
   priceChanged: boolean;
   previousAmount: number | null;
   isNew: boolean;
+  /** Official account/help page to cancel it, when we know the service. */
+  cancel?: { name: string; url: string; note?: string } | null;
 };
 
 export type Subscriptions = { currency: Currency; monthlyTotal: number; yearlyTotal: number; items: SubscriptionItem[] };
@@ -368,7 +397,7 @@ export type Savings = {
 
 export type WhatsappLink = { code: string; expiresAt: string; number: string | null };
 
-export type ExportData = { transactions: Transaction[]; accounts: Account[]; alerts: Alert[]; receipts: Array<Receipt & { items: ReceiptItem[] }> };
+export type ExportData = { transactions: Transaction[]; accounts: Account[]; alerts: Alert[]; receipts: Array<Receipt & { items: ReceiptItem[] }>; [k: string]: unknown };
 
 // ---- receipts ----
 
@@ -395,6 +424,8 @@ export type Receipt = {
   transactionId: string | null;
   matchStatus: ReceiptMatchStatus;
   matchedAt: string | null;
+  returnDays?: number | null;
+  warrantyUntil?: string | null;
   createdAt: string;
 };
 
@@ -406,9 +437,22 @@ export type ReceiptItem = {
   lineTotal: number;
   category: CategoryKey;
   categoryLocked: boolean;
+  tags?: string[];
+  /** Looks HSA/FSA-eligible (a hint, not advice). Detail view only. */
+  hsaSuggested?: boolean;
 };
 
-export type ReceiptDetail = Receipt & { items: ReceiptItem[]; transaction: Transaction | null };
+export type ReturnWindow = {
+  source: "typical" | "custom" | null;
+  policyName: string | null;
+  days: number | null;
+  note: string | null;
+  closesOn: string | null;
+  daysLeft: number | null;
+  open: boolean;
+};
+
+export type ReceiptDetail = Receipt & { items: ReceiptItem[]; transaction: Transaction | null; returnWindow?: ReturnWindow; refund?: RefundWatch | null };
 
 export type ReceiptPatch = {
   merchant?: string | null;
@@ -416,4 +460,94 @@ export type ReceiptPatch = {
   total?: number;
   tax?: number | null;
   currency?: Currency;
+  returnDays?: number | null;
+  warrantyUntil?: string | null;
 };
+
+// ---- 0003: cards, refunds, prices, goals, Ask ----
+
+export type CardDueStatus = "paid" | "overdue" | "due_soon" | "upcoming" | "nothing_due" | "unknown";
+
+export type CardDue = {
+  accountId: string;
+  label: string;
+  currency: string;
+  documentId: string;
+  statementBalance: number | null;
+  minimumDue: number | null;
+  dueDate: string | null;
+  daysUntilDue: number | null;
+  creditLimit: number | null;
+  /** balance / limit, 0..n */
+  utilization: number | null;
+  paidSinceStatement: number;
+  status: CardDueStatus;
+};
+
+export type RefundWatch = {
+  id: string;
+  transactionId: string | null;
+  receiptId: string | null;
+  merchant: string;
+  amount: number;
+  currency: string;
+  returnedOn: string;
+  status: "waiting" | "overdue" | "refunded" | "closed";
+  refundTransactionId: string | null;
+  refundedOn: string | null;
+  refundAmount: number | null;
+  createdAt: string;
+};
+
+export type PriceTrack = {
+  key: string;
+  name: string;
+  currency: string;
+  points: Array<{ date: string; unitPrice: number; merchant: string | null; receiptId: string }>;
+  firstPrice: number;
+  latestPrice: number;
+  changePct: number;
+  since: string;
+  latestOn: string;
+  minPrice: number;
+  maxPrice: number;
+  headline: string;
+};
+
+export type ReturnsOverview = {
+  returnWindows: Array<{ receiptId: string; merchant: string | null; purchasedOn: string | null; total: number | null; currency: string; window: ReturnWindow }>;
+  warranties: Array<{ receiptId: string; merchant: string | null; purchasedOn: string | null; total: number | null; currency: string; warrantyUntil: string }>;
+  refunds: RefundWatch[];
+  policies: Array<{ key: string; name: string; days: number; note: string | null }>;
+};
+
+export type GoalStatus = "done" | "on_track" | "behind" | "overdue" | "no_date";
+
+export type Goal = {
+  id: string;
+  name: string;
+  targetAmount: number;
+  targetDate: string | null;
+  currency: string;
+  createdAt: string;
+  progress: {
+    saved: number;
+    remaining: number;
+    progress: number;
+    monthsLeft: number | null;
+    monthlyNeeded: number | null;
+    recentMonthlyPace: number;
+    status: GoalStatus;
+  };
+  contributions: Array<{ id: string; amount: number; contributedOn: string; note: string | null; createdAt: string }>;
+};
+
+export type AskTurn = { role: "user" | "assistant"; text: string };
+export type AskAnswer = { answer: string; toolsUsed: string[]; usage: { used: number; limit: number } };
+export type AskUsage = { available: boolean; used: number; limit: number };
+
+export const TAX_TAGS = [
+  { tag: "tax-deductible", label: "Tax deductible" },
+  { tag: "business", label: "Business" },
+  { tag: "hsa-fsa", label: "HSA/FSA eligible" },
+] as const;
