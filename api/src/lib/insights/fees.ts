@@ -2,7 +2,17 @@
 
 import { daysBetween, merchantKey, threshold, type Txn } from "./util.js";
 
-export type FeeType = "late_fee" | "interest" | "forex" | "annual_fee" | "cash_advance" | "gst_on_fees" | "other";
+export type FeeType =
+  | "late_fee"
+  | "interest"
+  | "forex"
+  | "annual_fee"
+  | "cash_advance"
+  | "atm_fee"
+  | "overlimit"
+  | "overdraft"
+  | "gst_on_fees"
+  | "other";
 
 export const FEE_LABELS: Record<FeeType, string> = {
   late_fee: "Late payment fees",
@@ -10,6 +20,9 @@ export const FEE_LABELS: Record<FeeType, string> = {
   forex: "Forex markup",
   annual_fee: "Annual & membership fees",
   cash_advance: "Cash advance fees",
+  atm_fee: "ATM fees",
+  overlimit: "Over-limit fees",
+  overdraft: "Overdraft & returned-payment fees",
   gst_on_fees: "GST on fees",
   other: "Other bank charges",
 };
@@ -21,6 +34,9 @@ export const FEE_SHORT: Record<FeeType, string> = {
   forex: "forex markup",
   annual_fee: "annual fee",
   cash_advance: "cash advance fee",
+  atm_fee: "ATM fee",
+  overlimit: "over-limit fee",
+  overdraft: "overdraft fee",
   gst_on_fees: "GST",
   other: "other charges",
 };
@@ -35,7 +51,10 @@ export const feeShort = (t: FeeType, currency: string) => (currency === "INR" ? 
 const FEE_RULES: Array<[FeeType, RegExp]> = [
   ["gst_on_fees", /\b(i|c|s)?gst\b|service\s*tax/i],
   ["late_fee", /late\s*(payment)?\s*(fee|charge)|penal|overdue/i],
-  ["cash_advance", /cash\s*(advance|withdrawal)\s*(fee|charge)|atm\s*(fee|charge)/i],
+  ["overlimit", /over\s*-?\s*limit/i],
+  ["overdraft", /overdraft|\bnsf\b|insufficient\s*funds|returned\s*(payment|item|check|cheque)|bounce/i],
+  ["cash_advance", /cash\s*(advance|withdrawal)\s*(fee|charge)/i],
+  ["atm_fee", /atm\s*(fee|charge|surcharge|withdrawal\s*fee)|non-?\s*network\s*atm|out\s*of\s*network/i],
   ["forex", /forex|cross\s*currency|mark\s*-?\s*up|foreign\s*(currency|txn|transaction)|fx\s*(fee|charge)|international\s*(txn|transaction)/i],
   ["annual_fee", /annual\s*fee|joining\s*fee|membership\s*fee|renewal\s*fee|\bamc\b/i],
   ["interest", /interest|finance\s*charge/i],

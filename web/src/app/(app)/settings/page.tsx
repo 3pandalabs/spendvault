@@ -7,7 +7,7 @@ import { ACCOUNT_TABS, SubTabs } from "@/components/app-ui";
 import { ErrorText, Field, PageHeader, Panel, PanelTitle, Spinner, Toggle, selectClass } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ApiError, clearTokens, deleteMe, errorMessage, exportMe, logout, updateMe } from "@/lib/api";
+import { ApiError, clearTokens, deleteMe, downloadAuthed, errorMessage, exportMe, logout, updateMe } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import type { Currency, MePatch } from "@/lib/types";
 
@@ -117,11 +117,24 @@ export default function SettingsPage() {
 }
 
 function ExportPanel() {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const day = () => new Date().toISOString().slice(0, 10);
+
+  async function csv(key: string, path: string, name: string) {
+    setBusy(key);
+    setError(null);
+    try {
+      await downloadAuthed(path, `${name}-${day()}.csv`);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function download() {
-    setBusy(true);
+    setBusy("json");
     setError(null);
     try {
       const data = await exportMe();
@@ -137,17 +150,28 @@ function ExportPanel() {
     } catch (e) {
       setError(errorMessage(e));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   return (
     <Panel>
-      <PanelTitle>Export your data</PanelTitle>
-      <p className="text-sm text-fg-muted">Download every transaction, account, alert and receipt (with its line items) we hold for you, as a JSON file.</p>
-      <Button variant="outline" className="mt-3" onClick={download} disabled={busy}>
-        {busy ? <Spinner /> : <Download />} Download export
-      </Button>
+      <PanelTitle>Your data is yours</PanelTitle>
+      <p className="text-sm text-fg-muted">
+        Take it with you any time, no questions asked. CSV files open in Excel, Google Sheets or Numbers; the full export has every transaction,
+        account, alert and receipt (with line items) as JSON.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button variant="outline" onClick={() => csv("txns", "/me/export/transactions.csv", "spendvault-transactions")} disabled={busy !== null}>
+          {busy === "txns" ? <Spinner /> : <Download />} Transactions (CSV)
+        </Button>
+        <Button variant="outline" onClick={() => csv("items", "/me/export/receipt-items.csv", "spendvault-receipt-items")} disabled={busy !== null}>
+          {busy === "items" ? <Spinner /> : <Download />} Receipt items (CSV)
+        </Button>
+        <Button variant="ghost" onClick={download} disabled={busy !== null}>
+          {busy === "json" ? <Spinner /> : <Download />} Everything (JSON)
+        </Button>
+      </div>
       <div className="mt-2">
         <ErrorText>{error}</ErrorText>
       </div>

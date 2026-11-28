@@ -3,7 +3,7 @@
 import { CheckCircle2, Download, FileText, KeyRound, Mail, RotateCw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { SOURCE_META } from "@/components/bits";
+import { ReconciledBadge, SOURCE_META } from "@/components/bits";
 import { delay, Eyebrow } from "@/components/app-ui";
 import { CopyButton, EmptyState, ErrorText, LoadError, Loading, PageHeader, Spinner } from "@/components/common";
 import { UploadZone } from "@/components/UploadZone";
@@ -280,14 +280,11 @@ function DocRow({ d, index, onChange }: { d: Document; index: number; onChange: 
                 {d.txnCount} transaction{d.txnCount === 1 ? "" : "s"}
               </span>
               {d.statementTotal != null ? <span className="text-fg-muted">Statement total {money(d.statementTotal, me.baseCurrency)}</span> : null}
-              {d.reconciled ? (
-                <span className="inline-flex items-center gap-1 text-down">
-                  <CheckCircle2 className="size-3.5" /> Totals match
-                </span>
-              ) : d.reconciled === false ? (
-                <span className="text-amber-300" title="The transactions we read don't add up to the statement total. Some lines may be missing.">
-                  Totals don&apos;t match
-                </span>
+              <ReconciledBadge d={d} currency={me.baseCurrency} />
+              {d.kind === "statement" ? (
+                <Link href={`/documents/detail?id=${d.id}`} className="text-accent-strong hover:underline">
+                  Details
+                </Link>
               ) : null}
             </p>
           ) : null}

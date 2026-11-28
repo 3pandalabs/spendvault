@@ -9,6 +9,7 @@ import type {
   Account,
   Alert,
   AuthResponse,
+  Budgets,
   CategoryInfo,
   Currency,
   Dashboard,
@@ -16,15 +17,20 @@ import type {
   DocumentStatus,
   ExportData,
   ForwardingSetup,
+  Household,
   Institution,
+  InvitePreview,
   Me,
   MePatch,
+  NetWorth,
+  NetWorthItem,
   Page,
   PdfPassword,
   Receipt,
   ReceiptDetail,
   ReceiptPatch,
   Savings,
+  Subscriptions,
   Transaction,
   TransactionDetail,
   TransactionFilter,
@@ -51,6 +57,12 @@ const MESSAGE_COPY: Record<string, string> = {
   original_deleted: "The original file was deleted after parsing, so it can't be retried. Upload it again.",
   whatsapp_unavailable: "WhatsApp isn't switched on yet. Use email forwarding or upload for now.",
   rate_limited: "You're doing that too often. Wait a minute and try again.",
+  already_member: "That person is already in your household.",
+  household_full: "A household can have up to 4 people (including pending invites).",
+  cannot_invite_self: "That's your own email. Invite your partner's address instead.",
+  wrong_account: "This invite was sent to a different email address. Sign in with that address to join.",
+  already_in_household: "You're already in a household. Leave it first to join this one.",
+  invalid_category: "That category can't have a budget.",
   transaction_already_linked: "That transaction already has a receipt. Unlink it there first.",
   llm_unavailable: "AI reading isn't switched on yet. Type the total instead.",
   unsupported_file_type: "That file type isn't supported here.",
@@ -260,6 +272,8 @@ export const deleteDocument = (id: string, deleteTransactions: boolean) =>
 export const listAccounts = () => call<{ items: Account[] }>("/accounts");
 export const updateAccount = (id: string, label: string | null) =>
   call<Account>(`/accounts/${enc(id)}`, { method: "PATCH", body: { label } });
+export const setAccountInNetWorth = (id: string, includeInNetWorth: boolean) =>
+  call<Account>(`/accounts/${enc(id)}`, { method: "PATCH", body: { includeInNetWorth } });
 export const listTransactions = (f: TransactionFilter = {}) => call<Page<Transaction>>(`/transactions${qs(f)}`);
 export const updateTransaction = (id: string, b: { category: string; applyToMerchant?: boolean }) =>
   call<Transaction>(`/transactions/${enc(id)}`, { method: "PATCH", body: b });
@@ -299,12 +313,55 @@ export async function fetchReceiptImage(id: string): Promise<Blob> {
 
 // ---- dashboard / alerts / savings ----
 
-export const getDashboard = (month?: string) => call<Dashboard>(`/dashboard${qs({ month })}`);
+export const getDashboard = (month?: string, scope?: { scope?: "me" | "household"; member?: string }) =>
+  call<Dashboard>(`/dashboard${qs({ month, scope: scope?.scope, member: scope?.member })}`);
 export const listAlerts = (p: { includeDismissed?: boolean; limit?: number } = {}) =>
   call<{ items: Alert[] }>(`/alerts${qs(p)}`);
 export const dismissAlert = (id: string) => call<void>(`/alerts/${enc(id)}/dismiss`, { method: "POST" });
 export const recomputeAlerts = () => call<{ created: number }>("/alerts/recompute", { method: "POST" });
 export const getSavings = () => call<Savings>("/savings");
+export const getSubscriptions = () => call<Subscriptions>("/subscriptions");
+
+// ---- budgets / net worth ----
+
+export const getBudgets = (month?: string) => call<Budgets>(`/budgets${qs({ month })}`);
+export const setBudget = (category: string, amount: number) => call<Budgets>(`/budgets/${enc(category)}`, { method: "PUT", body: { amount } });
+export const deleteBudget = (category: string) => call<void>(`/budgets/${enc(category)}`, { method: "DELETE" });
+export const setMonthlyBudget = (amount: number | null) => call<Budgets>("/budgets-total", { method: "PUT", body: { amount } });
+export const getNetWorth = () => call<NetWorth>("/net-worth");
+export const addNetWorthItem = (b: Omit<NetWorthItem, "id" | "updatedAt">) => call<NetWorthItem>("/net-worth/items", { method: "POST", body: b });
+export const updateNetWorthItem = (id: string, b: Partial<Omit<NetWorthItem, "id" | "updatedAt">>) =>
+  call<NetWorthItem>(`/net-worth/items/${enc(id)}`, { method: "PATCH", body: b });
+export const deleteNetWorthItem = (id: string) => call<void>(`/net-worth/items/${enc(id)}`, { method: "DELETE" });
+
+// ---- household ----
+
+export const getHousehold = () => call<{ household: Household | null }>("/household");
+export const inviteToHousehold = (email: string) => call<{ emailed: boolean; household: Household }>("/household/invites", { method: "POST", body: { email } });
+export const cancelHouseholdInvite = (id: string) => call<void>(`/household/invites/${enc(id)}`, { method: "DELETE" });
+export const previewHouseholdInvite = (token: string) => call<InvitePreview>(`/household/join${qs({ token })}`);
+export const joinHousehold = (token: string) => call<{ household: Household }>("/household/join", { method: "POST", body: { token } });
+export const leaveHousehold = () => call<void>("/household/members/me", { method: "DELETE" });
+
+/** Downloads a bearer-authenticated file (CSV export) via a temporary blob link. */
+export async function downloadAuthed(path: string, filename: string): Promise<void> {
+  const send = (token: string | null) => fetch(`${API_URL}${path}`, { headers: token ? { authorization: `Bearer ${token}` } : {}, cache: "no-store" });
+  let res = await send(getTokens().access);
+  if (res.status === 401) {
+    const fresh = await refreshTokens();
+    if (!fresh) throw new ApiError(401, "Your session has ended. Please sign in again.", "session_ended");
+    res = await send(fresh);
+  }
+  if (!res.ok) throw await toError(res);
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 // ---- whatsapp ----
 

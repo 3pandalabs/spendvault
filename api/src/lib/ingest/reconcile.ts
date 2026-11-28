@@ -3,7 +3,22 @@ import { createHash } from "node:crypto";
 import { normalizeDescription } from "./text.js";
 import type { AccountKind, ParsedTxn } from "./types.js";
 
-export type Reconciliation = { statementTotal: number | null; extractedDebits: number; extractedCredits: number; reconciled: boolean | null };
+export type Reconciliation = {
+  statementTotal: number | null;
+  extractedDebits: number;
+  extractedCredits: number;
+  reconciled: boolean | null;
+  /** Previous / opening balance as printed on the statement. */
+  openingBalance: number | null;
+  /** The far end the math is checked against (card: total due / new balance; bank: closing balance). */
+  closingBalance: number | null;
+  /**
+   * statement end − (opening ± what we read), signed, when both ends are known.
+   * Card: positive = the statement shows more charges than we read (lines missing).
+   * Bank: positive = more money in than we read (or debits we read twice).
+   */
+  difference: number | null;
+};
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -24,12 +39,22 @@ export function reconcile(args: {
   const isBank = args.accountKind === "bank";
   const statementTotal = (isBank ? args.closingBalance ?? args.totalDue : args.totalDue ?? args.closingBalance) ?? null;
   let reconciled: boolean | null = null;
-  const prev = args.previousBalance;
+  let difference: number | null = null;
+  const prev = args.previousBalance ?? null;
   if (prev != null && statementTotal != null && args.txns.length) {
     const expected = isBank ? prev - debits + credits : prev + debits - credits;
-    reconciled = Math.abs(expected - statementTotal) <= Math.max(1, Math.abs(statementTotal) * 0.005);
+    difference = r2(statementTotal - expected);
+    reconciled = Math.abs(difference) <= Math.max(1, Math.abs(statementTotal) * 0.005);
   }
-  return { statementTotal: statementTotal == null ? null : r2(statementTotal), extractedDebits: debits, extractedCredits: credits, reconciled };
+  return {
+    statementTotal: statementTotal == null ? null : r2(statementTotal),
+    extractedDebits: debits,
+    extractedCredits: credits,
+    reconciled,
+    openingBalance: prev == null ? null : r2(prev),
+    closingBalance: statementTotal == null ? null : r2(statementTotal),
+    difference,
+  };
 }
 
 /**

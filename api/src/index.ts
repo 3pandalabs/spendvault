@@ -12,6 +12,7 @@ import { documentRoutes } from "./routes/documents.js";
 import { internalRoutes } from "./routes/internal.js";
 import { meRoutes } from "./routes/me.js";
 import { metricsRoutes } from "./routes/metrics.js";
+import { planningRoutes } from "./routes/planning.js";
 import { receiptRoutes } from "./routes/receipts.js";
 import { transactionRoutes } from "./routes/transactions.js";
 import { whatsappRoutes } from "./routes/whatsapp.js";
@@ -26,7 +27,7 @@ const app = Fastify({
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
 
-await app.register(cors, { origin: env.CORS_ORIGINS, credentials: true, methods: ["GET", "POST", "PATCH", "DELETE"] });
+await app.register(cors, { origin: env.CORS_ORIGINS, credentials: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] });
 await app.register(authPlugin);
 
 const startedAt = new Date().toISOString();
@@ -61,6 +62,7 @@ await app.register(documentRoutes);
 await app.register(transactionRoutes);
 await app.register(receiptRoutes);
 await app.register(dashboardRoutes);
+await app.register(planningRoutes);
 await app.register(whatsappRoutes);
 await app.register(internalRoutes);
 await app.register(metricsRoutes);

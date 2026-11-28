@@ -9,7 +9,8 @@ import { CategoryChip } from "@/components/bits";
 import { EmptyState, ErrorText, LoadError, Loading, PageHeader, Spinner, selectClass } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { errorMessage, listAccounts, listTransactions, updateTransaction } from "@/lib/api";
+import { errorMessage, getHousehold, listAccounts, listTransactions, updateTransaction } from "@/lib/api";
+import { useSession } from "@/lib/session";
 import { CATEGORY_KEYS, categoryColor, categoryLabel } from "@/lib/categories";
 import { fmtCount, fmtDate, fmtMonth, moneyExact, monthRange } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
@@ -46,6 +47,9 @@ function Transactions() {
     accountId: params.get("accountId") ?? undefined,
     q: params.get("q") ?? undefined,
     direction: (params.get("direction") as Direction | null) ?? undefined,
+    documentId: params.get("documentId") ?? undefined,
+    scope: params.get("scope") === "household" ? "household" : undefined,
+    member: params.get("member") ?? undefined,
   };
   const filterKey = params.toString();
 
@@ -58,7 +62,12 @@ function Transactions() {
     router.replace(`/transactions${next.toString() ? `?${next}` : ""}`, { scroll: false });
   };
 
+  const { me } = useSession();
   const accounts = useAsync(listAccounts, "accounts");
+  const inHousehold = Boolean(me.features?.household && me.household);
+  const household = useAsync(getHousehold, inHousehold ? "household" : null);
+  const members = household.data?.household?.members ?? [];
+  const nameOf = new Map(members.map((m) => [m.userId, m.displayName.split(/\s+/)[0] || m.displayName]));
   const first = useAsync(() => listTransactions({ ...filter, limit: PAGE }), `txns:${filterKey}`);
   const [more, setMore] = useState<{ key: string; items: Transaction[]; cursor: string | null } | null>(null);
   const [edited, setEdited] = useState<Record<string, Transaction>>({});
@@ -102,6 +111,36 @@ function Transactions() {
 
       {/* Filters */}
       <div className="spa-tile spa-in mb-4 space-y-3 rounded-2xl p-3 sm:p-4">
+        {inHousehold ? (
+          <select
+            aria-label="Whose transactions"
+            className={`${selectClass} sm:max-w-xs`}
+            value={filter.scope === "household" ? (filter.member ?? "all") : "me"}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "me") setFilter({ scope: undefined, member: undefined });
+              else setFilter({ scope: "household", member: v === "all" ? undefined : v });
+            }}
+          >
+            <option value="me">Just me</option>
+            <option value="all">Household: everyone</option>
+            {members
+              .filter((m) => !m.isMe)
+              .map((m) => (
+                <option key={m.userId} value={m.userId}>
+                  Household: {m.displayName}
+                </option>
+              ))}
+          </select>
+        ) : null}
+        {filter.documentId ? (
+          <p className="flex items-center gap-2 text-sm">
+            <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-0.5 text-amber-200">From one statement</span>
+            <button className="inline-flex items-center gap-1 text-accent-strong hover:underline" onClick={() => setFilter({ documentId: undefined })}>
+              <X className="size-3.5" /> Show all
+            </button>
+          </p>
+        ) : null}
         <SearchBox initial={filter.q ?? ""} onSearch={(q) => setFilter({ q: q || undefined })} key={filter.q ?? ""} />
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           <select
@@ -214,6 +253,7 @@ function Transactions() {
                 <TxnRow
                   key={t.id}
                   t={t}
+                  owner={t.ownerId && t.ownerId !== me.id ? (nameOf.get(t.ownerId) ?? "Partner") : null}
                   account={t.accountId ? accountById.get(t.accountId) : undefined}
                   onSaved={(u, all) => {
                     if (all) {
@@ -278,10 +318,13 @@ function SearchBox({ initial, onSearch }: { initial: string; onSearch: (q: strin
 
 function TxnRow({
   t,
+  owner,
   account,
   onSaved,
 }: {
   t: Transaction;
+  /** Set for another household member's transaction: read-only. */
+  owner?: string | null;
   account?: Account;
   onSaved: (t: Transaction, appliedToMerchant: boolean) => void;
 }) {
@@ -312,21 +355,32 @@ function TxnRow({
         <span className="order-3 text-xs text-fg-muted md:order-none md:text-sm md:text-fg">{fmtDate(t.postedOn)}</span>
         <div className="order-1 min-w-0 md:order-none">
           <p className="flex min-w-0 items-center gap-1.5 text-sm font-medium" title={t.descriptionRaw}>
-            <Link href={`/transactions/detail?id=${t.id}`} className="truncate hover:underline">
-              {t.merchant}
-            </Link>
-            {t.receiptId ? (
+            {owner ? (
+              <span className="truncate">{t.merchant}</span>
+            ) : (
+              <Link href={`/transactions/detail?id=${t.id}`} className="truncate hover:underline">
+                {t.merchant}
+              </Link>
+            )}
+            {owner ? (
+              <span className="shrink-0 rounded-full border border-sky-400/30 bg-sky-400/10 px-1.5 py-px text-[10px] font-medium text-sky-200">{owner}</span>
+            ) : null}
+            {t.receiptId && !owner ? (
               <Link href={`/transactions/detail?id=${t.id}`} aria-label={`${t.merchant}: receipt matched, see items`}>
                 <ReceiptPill />
               </Link>
             ) : null}
           </p>
           <p className="truncate text-xs text-fg-muted" title={t.descriptionRaw}>
-            {account ? `${accountName(account)} · ` : ""}
+            {account && !owner ? `${accountName(account)} · ` : ""}
             {t.descriptionRaw}
           </p>
         </div>
         <div className="order-4 col-span-2 flex min-w-0 items-center gap-2 md:order-none md:col-span-1">
+          {owner ? (
+            <CategoryChip category={t.category} className="text-fg-muted" />
+          ) : (
+            <>
           <span className="size-2.5 shrink-0 rounded-full" style={{ background: categoryColor(pending ?? t.category) }} aria-hidden />
           <select
             aria-label={`Category for ${t.merchant}`}
@@ -349,6 +403,8 @@ function TxnRow({
               <Lock className="size-3.5 text-fg-muted" aria-label="You set this category" />
             </span>
           ) : null}
+            </>
+          )}
         </div>
         <span
           className={cn(

@@ -38,6 +38,8 @@ export const users = pgTable("users", {
   whatsappLinkCode: text("whatsapp_link_code"),
   whatsappLinkExpiresAt: timestamp("whatsapp_link_expires_at", { withTimezone: true }),
   lastDigestAt: timestamp("last_digest_at", { withTimezone: true }),
+  // Overall monthly spending budget (safe-to-spend basis). drizzle/0002_planning.sql.
+  monthlyBudget: numeric("monthly_budget", { precision: 14, scale: 2 }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
@@ -82,6 +84,8 @@ export const accounts = pgTable(
     last4: text("last4").notNull().default(""),
     label: text("label"),
     currency: text("currency").notNull().default("INR"),
+    // Latest statement closing balance counts toward net worth (0002).
+    includeInNetWorth: boolean("include_in_net_worth").notNull().default(true),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("accounts_user_inst_kind_last4").on(t.userId, t.institution, t.kind, t.last4)],
@@ -131,6 +135,11 @@ export const documents = pgTable(
     // Sum of the debits we extracted for the period, for reconciliation.
     extractedDebits: numeric("extracted_debits", { precision: 14, scale: 2 }),
     reconciled: boolean("reconciled"),
+    // 0002: both ends of the statement and the signed gap (lib/ingest/reconcile.ts).
+    openingBalance: numeric("opening_balance", { precision: 14, scale: 2 }),
+    closingBalance: numeric("closing_balance", { precision: 14, scale: 2 }),
+    extractedCredits: numeric("extracted_credits", { precision: 14, scale: 2 }),
+    reconcileDiff: numeric("reconcile_diff", { precision: 14, scale: 2 }),
     txnCount: integer("txn_count").notNull().default(0),
     parser: text("parser"), // e.g. "rules:statement", "llm", "csv", "rules:alert"
     error: text("error"),
@@ -184,7 +193,16 @@ export const categoryRules = pgTable(
   (t) => [uniqueIndex("category_rules_user_merchant").on(t.userId, t.merchant)],
 );
 
-export const ALERT_KINDS = ["category_spike", "daily_spike", "large_new_merchant", "price_hike", "fee", "duplicate"] as const;
+export const ALERT_KINDS = [
+  "category_spike",
+  "daily_spike",
+  "large_new_merchant",
+  "price_hike",
+  "fee",
+  "duplicate",
+  "new_subscription",
+  "over_budget",
+] as const;
 export type AlertKind = (typeof ALERT_KINDS)[number];
 
 export const alerts = pgTable(
@@ -267,4 +285,74 @@ export const receiptItems = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("receipt_items_receipt").on(t.receiptId, t.position)],
+);
+
+// ---------------------------------------------------------------- planning (0002)
+
+// Per-category monthly budgets, in the user's base currency.
+export const budgets = pgTable(
+  "budgets",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    category: text("category").notNull(),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("budgets_user_category").on(t.userId, t.category)],
+);
+
+export const NET_WORTH_KINDS = ["asset", "liability"] as const;
+export type NetWorthKind = (typeof NET_WORTH_KINDS)[number];
+export const NET_WORTH_TYPES = ["cash", "investment", "retirement", "property", "vehicle", "loan", "mortgage", "credit_card", "other"] as const;
+
+// Manual assets/liabilities (cash, investments, home, car, loans...).
+export const netWorthItems = pgTable(
+  "net_worth_items",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<NetWorthKind>().notNull(),
+    type: text("type").notNull(),
+    name: text("name").notNull(),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(), // always >= 0; kind says which side
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("net_worth_items_user").on(t.userId)],
+);
+
+// Shared household (couples). A user is in at most one household.
+export const households = pgTable("households", {
+  id: id(),
+  name: text("name").notNull(),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+});
+
+export const householdMembers = pgTable(
+  "household_members",
+  {
+    householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").notNull().default("member"), // owner | member
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("household_members_user").on(t.userId), index("household_members_household").on(t.householdId)],
+);
+
+export const householdInvites = pgTable(
+  "household_invites",
+  {
+    id: id(),
+    householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "cascade" }),
+    email: text("email").notNull(), // lowercase
+    tokenHash: text("token_hash").notNull(),
+    invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("household_invites_token").on(t.tokenHash), index("household_invites_household").on(t.householdId)],
 );

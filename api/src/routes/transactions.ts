@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, ilike, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
@@ -10,6 +10,7 @@ import { notFound } from "../lib/errors.js";
 import { institutionName } from "../lib/institutions.js";
 import { num } from "../lib/money.js";
 import { recomputeAlertsForUser } from "../lib/insights/sweep.js";
+import { scopeUserIds } from "../lib/household/db.js";
 
 type TxnRow = typeof transactions.$inferSelect;
 type AccountRow = typeof accounts.$inferSelect;
@@ -46,6 +47,7 @@ export function accountView(a: AccountRow, txnCount: number, lastTxnOn: string |
     last4: a.last4,
     label: a.label,
     currency: a.currency,
+    includeInNetWorth: a.includeInNetWorth,
     txnCount,
     lastTxnOn,
   };
@@ -106,15 +108,22 @@ export async function transactionRoutes(fastify: FastifyInstance) {
       preHandler: requireAuth,
       schema: {
         params: z.object({ id: z.string() }),
-        body: z.object({ label: z.string().trim().max(60).nullable() }),
+        body: z.object({ label: z.string().trim().max(60).nullable(), includeInNetWorth: z.boolean() }).partial().strict(),
       },
     },
     async (req) => {
       if (!UUID.test(req.params.id)) throw notFound();
-      const label = req.body.label ? req.body.label : null;
+      const set: { label?: string | null; includeInNetWorth?: boolean } = {};
+      if (req.body.label !== undefined) set.label = req.body.label ? req.body.label : null;
+      if (req.body.includeInNetWorth !== undefined) set.includeInNetWorth = req.body.includeInNetWorth;
+      if (Object.keys(set).length === 0) {
+        const [cur] = await db.select().from(accounts).where(and(eq(accounts.id, req.params.id), eq(accounts.userId, req.userId!))).limit(1);
+        if (!cur) throw notFound();
+        return accountWithCounts(req.userId!, cur);
+      }
       const [a] = await db
         .update(accounts)
-        .set({ label })
+        .set(set)
         .where(and(eq(accounts.id, req.params.id), eq(accounts.userId, req.userId!)))
         .returning();
       if (!a) throw notFound();
@@ -136,6 +145,9 @@ export async function transactionRoutes(fastify: FastifyInstance) {
           accountId: z.string().max(40).optional(),
           q: z.string().trim().max(100).optional(),
           direction: z.enum(["debit", "credit"]).optional(),
+          documentId: z.string().max(40).optional(),
+          scope: z.enum(["me", "household"]).optional(),
+          member: z.string().max(40).optional(),
           limit: z.coerce.number().int().min(1).max(500).default(100),
           cursor: z.string().max(200).optional(),
         }),
@@ -144,6 +156,10 @@ export async function transactionRoutes(fastify: FastifyInstance) {
     async (req, reply) => {
       const qs = req.query;
       if (qs.accountId && !UUID.test(qs.accountId)) return { items: [], nextCursor: null };
+      if (qs.documentId && !UUID.test(qs.documentId)) return { items: [], nextCursor: null };
+      if (qs.member && qs.member !== "all" && !UUID.test(qs.member)) throw notFound();
+      const scope = await scopeUserIds(req.userId!, qs.scope, qs.member);
+      const household = qs.scope === "household" && scope.members.length > 0;
       const cursor = qs.cursor ? decodeCursor(qs.cursor) : null;
       if (qs.cursor && !cursor) return reply.code(400).send({ error: "invalid_cursor", code: "VALIDATION" });
       const like = qs.q ? `%${escapeLike(qs.q)}%` : null;
@@ -152,8 +168,9 @@ export async function transactionRoutes(fastify: FastifyInstance) {
         .from(transactions)
         .where(
           and(
-            eq(transactions.userId, req.userId!),
+            scope.ids.length === 1 ? eq(transactions.userId, scope.ids[0]) : inArray(transactions.userId, scope.ids),
             isNull(transactions.supersededBy),
+            qs.documentId ? eq(transactions.documentId, qs.documentId) : undefined,
             qs.from ? gte(transactions.postedOn, qs.from) : undefined,
             qs.to ? lte(transactions.postedOn, qs.to) : undefined,
             qs.category ? eq(transactions.category, qs.category) : undefined,
@@ -167,7 +184,7 @@ export async function transactionRoutes(fastify: FastifyInstance) {
         .limit(qs.limit + 1);
       const page = rows.slice(0, qs.limit);
       return {
-        items: page.map((r) => transactionView(r.t, r.receiptId)),
+        items: page.map((r) => (household ? { ...transactionView(r.t, r.receiptId), ownerId: r.t.userId } : transactionView(r.t, r.receiptId))),
         nextCursor: rows.length > qs.limit ? encodeCursor(page[page.length - 1].t) : null,
       };
     },

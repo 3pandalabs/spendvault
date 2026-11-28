@@ -1,6 +1,6 @@
 // Recurring-charge (subscription) detection. Pure.
 
-import { daysBetween, isSpendDebit, median, merchantKey, round2, threshold, type Txn } from "./util.js";
+import { addDays, addMonths, daysBetween, daysInMonth, isSpendDebit, median, merchantKey, monthOf, round2, threshold, type Txn } from "./util.js";
 
 export type Cadence = "weekly" | "monthly" | "yearly";
 
@@ -15,7 +15,12 @@ export type Recurring = {
   previousTypical: number | null;
   /** First charge at the latest price (when the hike started). */
   latestPriceSince: string;
+  firstChargedOn: string;
   lastChargedOn: string;
+  /** When the next charge should land (last charge + one cadence step). */
+  nextExpectedOn: string;
+  /** Median days between charges. */
+  intervalDays: number;
   occurrences: number;
   monthlyAmount: number;
   annualCost: number;
@@ -104,7 +109,10 @@ export function detectRecurring(txns: readonly Txn[], currency: string, today: s
       latestAmount: latest,
       previousTypical: previousTypical === null ? null : round2(previousTypical),
       latestPriceSince: charges[runStart].postedOn,
+      firstChargedOn: charges[0].postedOn,
       lastChargedOn: last.postedOn,
+      nextExpectedOn: nextChargeAfter(last.postedOn, cadence, median(intervals)),
+      intervalDays: Math.round(median(intervals)),
       occurrences: charges.length,
       monthlyAmount,
       annualCost: round2(monthlyAmount * 12),
@@ -113,6 +121,30 @@ export function detectRecurring(txns: readonly Txn[], currency: string, today: s
     });
   }
   return out.sort((a, b) => b.monthlyAmount - a.monthlyAmount || a.merchant.localeCompare(b.merchant));
+}
+
+/**
+ * The charge after `last`: monthly keeps the day of the month (clamped, so a
+ * charge on the 31st lands on Feb 28/29); yearly is the same date next year;
+ * weekly is `last` + the median interval (7 ± a day or two).
+ */
+export function nextChargeAfter(last: string, cadence: Cadence, intervalDays: number): string {
+  if (cadence === "weekly") return addDays(last, Math.max(1, Math.round(intervalDays)));
+  const m = addMonths(monthOf(last), cadence === "monthly" ? 1 : 12);
+  const day = Math.min(+last.slice(8, 10), daysInMonth(m));
+  return `${m}-${String(day).padStart(2, "0")}`;
+}
+
+/** Every expected charge of `r` in [from, to] (inclusive), stepping from its next expected date. */
+export function expectedChargesBetween(r: Recurring, from: string, to: string): string[] {
+  const out: string[] = [];
+  let d = r.nextExpectedOn;
+  // A missed charge (expected date already past) is not projected again.
+  for (let i = 0; i < 60 && d <= to; i++) {
+    if (d >= from) out.push(d);
+    d = nextChargeAfter(d, r.cadence, r.intervalDays);
+  }
+  return out;
 }
 
 /**

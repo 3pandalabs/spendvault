@@ -151,6 +151,18 @@ export function computeSavings(opts: { txns: readonly Txn[]; currency: string; t
       "Avoid cash withdrawals on a credit card",
       `You paid ${a} in cash-advance fees${tax} in the last 12 months, and interest starts on day one. Withdraw from your bank account instead.`,
     ],
+    atm_fee: (a) => [
+      "Use in-network ATMs",
+      `You paid ${a} in ATM fees${tax} in the last 12 months. Your bank's own ATMs (or cash back at a store checkout) are usually free.`,
+    ],
+    overlimit: (a) => [
+      "Stay under your credit limit",
+      `You paid ${a} in over-limit fees${tax} in the last 12 months. Opt out of over-limit transactions with your issuer, or ask for a higher limit.`,
+    ],
+    overdraft: (a) => [
+      "Stop overdraft and returned-payment fees",
+      `You paid ${a} in overdraft or returned-payment fees${tax} in the last 12 months. A low-balance alert, or opting out of overdraft coverage, avoids them.`,
+    ],
   };
   for (const [type, a] of feeAgg) {
     const build = FEE_TIPS[type];
