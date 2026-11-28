@@ -6,7 +6,7 @@ import { z } from "zod";
 import { markUserDeleted, requireAuth } from "../auth/plugin.js";
 import { verifySecret } from "../auth/password.js";
 import { db } from "../db/index.js";
-import { accounts, alerts, categoryRules, documents, forwardingConfirmations, goalContributions, receiptItems, receipts, refundWatches, savingsGoals, transactionSplits, transactions, users } from "../db/schema.js";
+import { accounts, alerts, calculatorScenarios, categoryRules, documents, forwardingConfirmations, goalContributions, receiptItems, receipts, refundWatches, savingsGoals, transactionSplits, transactions, users } from "../db/schema.js";
 import { isValidTimeZone } from "../lib/userTime.js";
 import { isTaxTag, TAX_TAG_KEYS } from "../lib/tax.js";
 import { env } from "../env.js";
@@ -14,6 +14,8 @@ import { keyedLimiter } from "../lib/clientKey.js";
 import { BASE_CURRENCIES } from "../lib/currency.js";
 import { gmailFilterQuery } from "../lib/institutions.js";
 import { userView } from "../lib/users.js";
+import { billingSummary, requirePlus } from "../lib/billing/entitlements.js";
+import { cancelSubscriptionNow, stripeConfigured } from "../lib/billing/stripe.js";
 import { alertView } from "../lib/insights/load.js";
 import { receiptDocColumns, receiptItemView, receiptView } from "../lib/receipts/db.js";
 import { accountView, transactionView } from "./transactions.js";
@@ -57,6 +59,7 @@ async function meView(u: UserRow) {
     },
     setup: { hasDocuments, hasPasswords, forwardingConfirmed },
     llmEnabled: Boolean(env.ANTHROPIC_API_KEY),
+    ...billingSummary(u),
     features: { household: householdEnabled() },
     household: await householdSummary(u.id),
   };
@@ -142,6 +145,10 @@ export async function meRoutes(fastify: FastifyInstance) {
       }
       // Leave a shared household first (an empty household is deleted, ownership passes on).
       if (await membershipOf(u.id)) await leaveHousehold(u.id);
+      // Stop a Plus subscription first (best effort: never blocks the deletion).
+      if (u.stripeSubscriptionId && stripeConfigured()) {
+        await cancelSubscriptionNow(u.stripeSubscriptionId).catch((err) => req.log.warn({ userId: u.id, err: (err as Error).message }, "stripe cancel on delete failed"));
+      }
       // Every user-owned table cascades from users.
       await db.delete(users).where(eq(users.id, u.id));
       markUserDeleted(u.id);
@@ -177,9 +184,10 @@ export async function meRoutes(fastify: FastifyInstance) {
         db.select().from(savingsGoals).where(eq(savingsGoals.userId, userId)),
         db.select().from(goalContributions).where(eq(goalContributions.userId, userId)),
         db.select().from(categoryRules).where(eq(categoryRules.userId, userId)),
+        db.select().from(calculatorScenarios).where(eq(calculatorScenarios.userId, userId)),
       ]),
     ]);
-    const [splitRows, watchRows, goalRows, contribRows, ruleRows] = extra;
+    const [splitRows, watchRows, goalRows, contribRows, ruleRows, scenarioRows] = extra;
     const itemsBy = new Map<string, (typeof itemRows)[number][]>();
     for (const i of itemRows) itemsBy.set(i.receiptId, [...(itemsBy.get(i.receiptId) ?? []), i]);
     const receiptByTxn = new Map(receiptRows.filter((x) => x.r.transactionId).map((x) => [x.r.transactionId!, x.r.id]));
@@ -204,6 +212,7 @@ export async function meRoutes(fastify: FastifyInstance) {
         contributions: contribRows.filter((c) => c.goalId === g.id).map((c) => ({ amount: num(c.amount), contributedOn: c.contributedOn, note: c.note })),
       })),
       categoryRules: ruleRows.map((r) => ({ merchant: r.merchant, category: r.category })),
+      calculatorScenarios: scenarioRows.map((r) => ({ calculator: r.calculator, inputs: r.inputs, updatedAt: r.updatedAt.toISOString() })),
     };
   });
 
@@ -254,7 +263,8 @@ export async function meRoutes(fastify: FastifyInstance) {
   app.get(
     "/me/export/tax.csv",
     {
-      preHandler: requireAuth,
+      // Plus (lib/plan.ts). The full JSON/CSV exports above stay free.
+      preHandler: [requireAuth, requirePlus("tax_export")],
       schema: { querystring: z.object({ year: z.coerce.number().int().min(2000).max(2100), tag: z.string().max(40).optional() }) },
     },
     async (req, reply) => {

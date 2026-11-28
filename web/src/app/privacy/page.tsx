@@ -84,6 +84,11 @@ export default function PrivacyPage() {
           to remind you before a payment is due and show how much of your limit you&apos;re using. We assign each transaction a category, which
           you can change.
         </p>
+        <H3>Cash spends you add (only if you add them)</H3>
+        <p>
+          Transactions you type in yourself: date, amount, where you spent it, category, which account (a &ldquo;Cash&rdquo; account we create
+          for you, or one of your cards or bank accounts), and any note or tags. They&apos;re marked as added by hand.
+        </p>
         <H3>Your notes, tags, splits and rules</H3>
         <p>
           Tags (including tax tags such as tax-deductible, business or HSA/FSA eligible) and notes you add to transactions or receipt items,
@@ -103,8 +108,20 @@ export default function PrivacyPage() {
         </p>
         <H3>Budgets and net worth (only if you add them)</H3>
         <p>
-          Monthly budgets you set, and the assets and debts you type in for net worth (a name, a type and an amount). Nothing is linked to your
-          bank: these are exactly what you enter.
+          Monthly budgets you set (and whether unspent or overspent money rolls over to the next month, and from which month), and the assets
+          and debts you type in for net worth (a name, a type and an amount). Nothing is linked to your bank: these are exactly what you enter.
+        </p>
+        <H3>Calculators</H3>
+        <p>
+          The calculators run in your browser; what you type into them isn&apos;t sent to us. Signed in, we pre-fill them from data we already
+          hold (your average spending, net worth, card balances and goals). If you press &ldquo;Save these numbers&rdquo;, we store those
+          inputs for that calculator until you remove them or delete your account.
+        </p>
+        <H3>SpendVault Plus (only if you subscribe)</H3>
+        <p>
+          If you buy SpendVault Plus, Stripe handles the payment: we never see or store your card number. We store your Stripe customer and
+          subscription ids, your plan, its status, whether it&apos;s billed monthly or yearly and when it renews, and a record of the Stripe
+          events we processed.
         </p>
         <H3>Shared household (only if you use it)</H3>
         <p>
@@ -173,6 +190,10 @@ export default function PrivacyPage() {
             conversation) plus the results of the fixed queries needed to answer it, drawn only from your own data (for example totals,
             merchants, dates, amounts and receipt items), are sent to Anthropic to write the answer. Anthropic processes this data under commercial terms that don&apos;t allow it to train
             models on our API data.
+          </li>
+          <li>
+            <strong>Stripe, Inc.</strong> (USA): only if you buy SpendVault Plus. Stripe takes the payment and manages the subscription; it
+            receives your email address and your payment details directly from you.
           </li>
           <li>
             <strong>Meta Platforms, Inc.</strong> (WhatsApp Business Platform): only if you link WhatsApp. Messages and files you send to our

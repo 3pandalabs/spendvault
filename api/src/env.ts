@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { z } from "zod";
+import { billingFlag } from "./lib/plan.js";
 
 // Validated once at import. Every process that touches the database (API,
 // Temporal worker) loads this; pure modules (parsers, insights, categories)
@@ -62,6 +63,18 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => !["false", "0", "off"].includes((v ?? "").trim().toLowerCase())),
+
+  // SpendVault Plus (lib/plan.ts). "off" (default) → everyone is effectively on Plus.
+  BILLING: z.string().optional().transform((v) => billingFlag(v)),
+  // Stripe (TEST mode keys only unless STRIPE_ALLOW_LIVE=true). Billing needs the
+  // secret key, the webhook secret and the price id for the user's currency/interval.
+  STRIPE_SECRET_KEY: optional,
+  STRIPE_WEBHOOK_SECRET: optional,
+  STRIPE_ALLOW_LIVE: z.string().optional().transform((v) => v === "true"),
+  STRIPE_PRICE_USD_MONTH: optional,
+  STRIPE_PRICE_USD_YEAR: optional,
+  STRIPE_PRICE_INR_MONTH: optional,
+  STRIPE_PRICE_INR_YEAR: optional,
 
   GIT_COMMIT: optional,
   SOURCE_COMMIT: optional,

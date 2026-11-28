@@ -4,9 +4,13 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { accounts, categoryRules, transactionSplits, transactions } from "../db/schema.js";
-import { CATEGORIES, CATEGORY_KEYS, NON_SPEND, isCategory } from "../lib/categories.js";
-import { invalid, notFound } from "../lib/errors.js";
+import { accounts, categoryRules, transactionSplits, transactions, users } from "../db/schema.js";
+import { CATEGORIES, CATEGORY_KEYS, NON_SPEND, categorize, isCategory, type Category } from "../lib/categories.js";
+import { conflict, invalid, notFound } from "../lib/errors.js";
+import { CASH_ACCOUNT, MANUAL, cleanMerchant, manualFingerprint, validManualDate } from "../lib/manualTxn.js";
+import { rematchReceiptsForUser } from "../lib/receipts/db.js";
+import { todayFor } from "../lib/userTime.js";
+import type { DbOrTx } from "../db/index.js";
 import { MAX_NOTE_LENGTH, MAX_TAG_LENGTH, MAX_TAGS, normalizeNote, normalizeTags, ruleKey, SplitError, validateSplit } from "../lib/txnTools.js";
 import { toDbAmount } from "../lib/money.js";
 import { institutionName } from "../lib/institutions.js";
@@ -81,6 +85,57 @@ function decodeCursor(c: string): { postedOn: string; id: string } | null {
 
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (m) => `\\${m}`);
 
+const manualMoney = z.number().finite().positive().max(1e9);
+
+/** The caller's "Cash" account, created on first use (the accounts unique index keeps it single). */
+async function cashAccount(tx: DbOrTx, userId: string, currency: string): Promise<AccountRow> {
+  await tx
+    .insert(accounts)
+    .values({ userId, institution: CASH_ACCOUNT.institution, kind: CASH_ACCOUNT.kind, last4: CASH_ACCOUNT.last4, label: CASH_ACCOUNT.label, currency, includeInNetWorth: false })
+    .onConflictDoNothing({ target: [accounts.userId, accounts.institution, accounts.kind, accounts.last4] });
+  const [a] = await tx
+    .select()
+    .from(accounts)
+    .where(and(eq(accounts.userId, userId), eq(accounts.institution, CASH_ACCOUNT.institution), eq(accounts.kind, CASH_ACCOUNT.kind), eq(accounts.last4, CASH_ACCOUNT.last4)))
+    .limit(1);
+  return a;
+}
+
+/** accountId given → that account (must be the caller's, else 404); null/omitted → Cash. */
+async function manualAccount(tx: DbOrTx, userId: string, accountId: string | null | undefined, baseCurrency: string): Promise<AccountRow> {
+  if (!accountId) return cashAccount(tx, userId, baseCurrency);
+  if (!UUID.test(accountId)) throw notFound();
+  const [a] = await tx.select().from(accounts).where(and(eq(accounts.id, accountId), eq(accounts.userId, userId))).limit(1);
+  if (!a) throw notFound();
+  return a;
+}
+
+/** Category for a typed-in merchant: the user's rule, then the built-in map, else Other (debits) / Income (credits). */
+async function guessCategory(userId: string, merchant: string, direction: "debit" | "credit"): Promise<Category> {
+  const rules = await db.select({ merchant: categoryRules.merchant, category: categoryRules.category }).from(categoryRules).where(eq(categoryRules.userId, userId));
+  const map = new Map<string, Category>(rules.filter((r) => isCategory(r.category)).map((r) => [r.merchant, r.category as Category]));
+  return map.get(merchant.trim().toLowerCase()) ?? categorize(merchant, direction, map).category;
+}
+
+async function manualBasics(userId: string) {
+  const [u] = await db.select({ baseCurrency: users.baseCurrency, timezone: users.timezone }).from(users).where(eq(users.id, userId)).limit(1);
+  if (!u) throw notFound();
+  return { currency: u.baseCurrency, today: todayFor(u) };
+}
+
+/** After a manual write: refresh alerts and try to match receipts (both fail-soft, in the background). */
+function afterManualWrite(userId: string, log: (o: object, m: string) => void) {
+  void recomputeAlertsForUser(userId).catch((err) => log({ userId, err: String(err).slice(0, 200) }, "alert recompute failed"));
+  void rematchReceiptsForUser(userId).catch((err) => log({ userId, err: String(err).slice(0, 200) }, "receipt rematch failed"));
+}
+
+async function txnExtras(userId: string, id: string) {
+  const extra = await db.execute<{ has: boolean; receipt_id: string | null }>(sql`
+    SELECT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = ${id}) AS has,
+           (SELECT r.id FROM receipts r WHERE r.transaction_id = ${id} AND r.user_id = ${userId}) AS receipt_id`);
+  return { receiptId: extra.rows[0]?.receipt_id ?? null, hasSplit: extra.rows[0]?.has ?? false };
+}
+
 export async function transactionRoutes(fastify: FastifyInstance) {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
@@ -151,6 +206,7 @@ export async function transactionRoutes(fastify: FastifyInstance) {
           q: z.string().trim().max(100).optional(),
           tag: z.string().trim().max(40).optional(),
           direction: z.enum(["debit", "credit"]).optional(),
+          source: z.enum(["statement", "alert", "csv", "manual"]).optional(),
           documentId: z.string().max(40).optional(),
           scope: z.enum(["me", "household"]).optional(),
           member: z.string().max(40).optional(),
@@ -186,6 +242,7 @@ export async function transactionRoutes(fastify: FastifyInstance) {
             qs.category ? eq(transactions.category, qs.category) : undefined,
             qs.accountId ? eq(transactions.accountId, qs.accountId) : undefined,
             qs.direction ? eq(transactions.direction, qs.direction) : undefined,
+            qs.source ? eq(transactions.sourceKind, qs.source) : undefined,
             like ? or(ilike(transactions.merchant, like), ilike(transactions.descriptionRaw, like), ilike(transactions.note, like)) : undefined,
             qs.tag ? sql`${normalizeTags([qs.tag])[0] ?? ""} = ANY(${transactions.tags})` : undefined,
             cursor ? sql`(${transactions.postedOn}, ${transactions.id}) < (${cursor.postedOn}::date, ${cursor.id}::uuid)` : undefined,
@@ -201,6 +258,78 @@ export async function transactionRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // ---------------------------------------------------------------- manual (cash) transactions (0005)
+
+  app.post(
+    "/transactions",
+    {
+      preHandler: requireAuth,
+      schema: {
+        body: z
+          .object({
+            postedOn: z.string().regex(DATE),
+            amount: manualMoney,
+            direction: z.enum(["debit", "credit"]).default("debit"),
+            merchant: z.string().max(200),
+            category: z.string().refine(isCategory, "unknown category").optional(),
+            accountId: z.string().max(40).nullable().optional(),
+            note: z.string().max(MAX_NOTE_LENGTH * 2).nullable().optional(),
+            tags: z.array(z.string().max(MAX_TAG_LENGTH + 10)).max(MAX_TAGS * 2).optional(),
+          })
+          .strict(),
+      },
+    },
+    async (req, reply) => {
+      const userId = req.userId!;
+      const b = req.body;
+      const { currency, today } = await manualBasics(userId);
+      if (!validManualDate(b.postedOn, today)) throw invalid("invalid_date");
+      const merchant = cleanMerchant(b.merchant);
+      if (!merchant) throw invalid("merchant_required");
+      const category = (b.category as Category | undefined) ?? (await guessCategory(userId, merchant, b.direction));
+      const row = await db.transaction(async (tx) => {
+        const acct = await manualAccount(tx, userId, b.accountId, currency);
+        const [t] = await tx
+          .insert(transactions)
+          .values({
+            userId,
+            accountId: acct.id,
+            documentId: null,
+            postedOn: b.postedOn,
+            descriptionRaw: merchant,
+            merchant,
+            category,
+            amount: toDbAmount(b.amount),
+            direction: b.direction,
+            currency: acct.currency,
+            sourceKind: MANUAL,
+            fingerprint: manualFingerprint(),
+            categoryLocked: b.category !== undefined,
+            tags: normalizeTags(b.tags ?? []),
+            note: normalizeNote(b.note ?? null),
+          })
+          .returning();
+        return t;
+      });
+      req.log.info({ userId, txnId: row.id }, "manual transaction added");
+      afterManualWrite(userId, (o, m) => req.log.warn(o, m));
+      return reply.code(201).send(transactionView(row));
+    },
+  );
+
+  app.delete("/transactions/:id", { preHandler: requireAuth, schema: { params: z.object({ id: z.string() }) } }, async (req, reply) => {
+    const userId = req.userId!;
+    if (!UUID.test(req.params.id)) throw notFound();
+    const [t] = await db.select({ id: transactions.id, sourceKind: transactions.sourceKind }).from(transactions).where(and(eq(transactions.id, req.params.id), eq(transactions.userId, userId))).limit(1);
+    if (!t) throw notFound();
+    // Statement/alert rows come from a document: delete the document instead.
+    if (t.sourceKind !== MANUAL) throw conflict("not_manual");
+    await db.delete(transactions).where(and(eq(transactions.id, t.id), eq(transactions.userId, userId), eq(transactions.sourceKind, MANUAL)));
+    req.log.info({ userId, txnId: t.id }, "manual transaction deleted");
+    afterManualWrite(userId, (o, m) => req.log.warn(o, m));
+    return reply.code(204).send();
+  });
+
   app.patch(
     "/transactions/:id",
     {
@@ -213,14 +342,45 @@ export async function transactionRoutes(fastify: FastifyInstance) {
             applyToMerchant: z.boolean().optional(),
             tags: z.array(z.string().max(MAX_TAG_LENGTH + 10)).max(MAX_TAGS * 2).optional(),
             note: z.string().max(MAX_NOTE_LENGTH * 2).nullable().optional(),
+            // Manual rows only (409 not_manual otherwise): what the bank reported stays as reported.
+            postedOn: z.string().regex(DATE).optional(),
+            amount: manualMoney.optional(),
+            merchant: z.string().max(200).optional(),
+            direction: z.enum(["debit", "credit"]).optional(),
+            accountId: z.string().max(40).nullable().optional(),
           })
-          .refine((b) => b.category !== undefined || b.tags !== undefined || b.note !== undefined, "empty patch"),
+          .refine((b) => Object.values(b).some((v) => v !== undefined), "empty patch"),
       },
     },
     async (req) => {
       const userId = req.userId!;
       if (!UUID.test(req.params.id)) throw notFound();
-      const { category, applyToMerchant, tags, note } = req.body;
+      const { category, applyToMerchant, tags, note, postedOn, amount, merchant: rawMerchant, direction, accountId } = req.body;
+      const manualEdit = postedOn !== undefined || amount !== undefined || rawMerchant !== undefined || direction !== undefined || accountId !== undefined;
+      const manualSet: Partial<typeof transactions.$inferInsert> = {};
+      if (manualEdit) {
+        const [cur] = await db.select({ sourceKind: transactions.sourceKind }).from(transactions).where(and(eq(transactions.id, req.params.id), eq(transactions.userId, userId))).limit(1);
+        if (!cur) throw notFound();
+        if (cur.sourceKind !== MANUAL) throw conflict("not_manual");
+        const { currency, today } = await manualBasics(userId);
+        if (postedOn !== undefined) {
+          if (!validManualDate(postedOn, today)) throw invalid("invalid_date");
+          manualSet.postedOn = postedOn;
+        }
+        if (amount !== undefined) manualSet.amount = toDbAmount(amount);
+        if (direction !== undefined) manualSet.direction = direction;
+        if (rawMerchant !== undefined) {
+          const m = cleanMerchant(rawMerchant);
+          if (!m) throw invalid("merchant_required");
+          manualSet.merchant = m;
+          manualSet.descriptionRaw = m;
+        }
+        if (accountId !== undefined) {
+          const acct = await manualAccount(db, userId, accountId, currency);
+          manualSet.accountId = acct.id;
+          manualSet.currency = acct.currency;
+        }
+      }
       const updated = await db.transaction(async (tx) => {
         const [t] = await tx
           .update(transactions)
@@ -228,8 +388,15 @@ export async function transactionRoutes(fastify: FastifyInstance) {
             ...(category ? { category, categoryLocked: true } : {}),
             ...(tags !== undefined ? { tags: normalizeTags(tags) } : {}),
             ...(note !== undefined ? { note: normalizeNote(note) } : {}),
+            ...manualSet,
           })
-          .where(and(eq(transactions.id, req.params.id), eq(transactions.userId, userId)))
+          .where(
+            and(
+              eq(transactions.id, req.params.id),
+              eq(transactions.userId, userId),
+              manualEdit ? eq(transactions.sourceKind, MANUAL) : undefined,
+            ),
+          )
           .returning();
         if (!t) return null;
         if (category && applyToMerchant) {
@@ -253,11 +420,10 @@ export async function transactionRoutes(fastify: FastifyInstance) {
       });
       if (!updated) throw notFound();
       // Categories feed the spike detector; refresh this user's alerts (fail-soft).
-      if (category) void recomputeAlertsForUser(userId).catch((err) => req.log.warn({ userId, err: String(err) }, "alert recompute failed"));
-      const extra = await db.execute<{ has: boolean; receipt_id: string | null }>(sql`
-        SELECT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = ${updated.id}) AS has,
-               (SELECT r.id FROM receipts r WHERE r.transaction_id = ${updated.id} AND r.user_id = ${userId}) AS receipt_id`);
-      return transactionView(updated, extra.rows[0]?.receipt_id ?? null, extra.rows[0]?.has ?? false);
+      if (manualEdit) afterManualWrite(userId, (o, m) => req.log.warn(o, m));
+      else if (category) void recomputeAlertsForUser(userId).catch((err) => req.log.warn({ userId, err: String(err) }, "alert recompute failed"));
+      const extra = await txnExtras(userId, updated.id);
+      return transactionView(updated, extra.receiptId, extra.hasSplit);
     },
   );
 

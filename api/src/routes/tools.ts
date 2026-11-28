@@ -16,6 +16,8 @@ import { invalid, notFound } from "../lib/errors.js";
 import { num, toDbAmount, toNum } from "../lib/money.js";
 import { loadCardDues, loadGoals, refundWatchViews, syncRefundWatches, userBasicsRow } from "../lib/toolsDb.js";
 import { todayFor } from "../lib/userTime.js";
+import { planOf, requirePlus } from "../lib/billing/entitlements.js";
+import { hasFeature, limitsFor, plusRequired } from "../lib/plan.js";
 
 const UUID = z.string().uuid();
 const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -165,7 +167,11 @@ export async function toolRoutes(fastify: FastifyInstance) {
     const userId = req.userId!;
     const { today, currency } = await basics(userId);
     const count = await db.select({ n: sql<number>`count(*)::int` }).from(savingsGoals).where(eq(savingsGoals.userId, userId));
-    if ((count[0]?.n ?? 0) >= 20) throw invalid("too_many_goals");
+    const plan = await planOf(userId);
+    const n = count[0]?.n ?? 0;
+    // Free: FREE_LIMITS.goals (when BILLING=on); Plus: up to 20.
+    if (!hasFeature(plan, "unlimited_goals") && n >= (limitsFor(plan).goals ?? Infinity)) return reply.code(402).send(plusRequired("unlimited_goals"));
+    if (n >= 20) throw invalid("too_many_goals");
     const [g] = await db
       .insert(savingsGoals)
       .values({ userId, name: req.body.name, targetAmount: toDbAmount(req.body.targetAmount), targetDate: req.body.targetDate ?? null, currency })
@@ -237,6 +243,7 @@ export async function toolRoutes(fastify: FastifyInstance) {
 
   app.get("/ask/usage", { preHandler: requireAuth }, async (req) => ({
     available: Boolean(env.ANTHROPIC_API_KEY),
+    allowed: hasFeature(await planOf(req.userId!), "ask"),
     used: await askedToday(req.userId!),
     limit: ASK_DAILY_LIMIT,
   }));
@@ -244,7 +251,7 @@ export async function toolRoutes(fastify: FastifyInstance) {
   app.post(
     "/ask",
     {
-      preHandler: requireAuth,
+      preHandler: [requireAuth, requirePlus("ask")],
       schema: {
         body: z.object({
           question: z.string().trim().min(2).max(MAX_QUESTION_CHARS),

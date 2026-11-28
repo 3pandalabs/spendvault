@@ -81,6 +81,8 @@ export function detectDuplicates(txns: readonly Txn[], currency: string, recurri
     .filter(
       (t) =>
         !t.supersededBy &&
+        // Hand-typed cash spends are the user's own record, not a bank double charge.
+        t.sourceKind !== "manual" &&
         t.currency === currency &&
         t.direction === "debit" &&
         !["card_payment", "income", "transfers", "investments", "transport"].includes(t.category) &&

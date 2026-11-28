@@ -25,6 +25,7 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Terms of Use"
+      updated="27 November 2026"
       toc={TOC}
       intro={
         <p>
@@ -81,7 +82,13 @@ export default function TermsPage() {
       </Section>
 
       <Section id="price" title="7. Price">
-        <p>SpendVault is free while in early access. If we introduce paid plans, we&apos;ll tell you in advance, and you won&apos;t be charged without agreeing.</p>
+        <p>
+          The core of SpendVault is free. An optional paid plan, SpendVault Plus, adds extra features; while SpendVault is in early access,
+          everything is included for everyone. If Plus is offered and you choose it, the price, billing period and renewal date are shown
+          before you pay, payment is handled by Stripe, and the subscription renews until you cancel. You can cancel any time from the Plan
+          page; Plus stays on until the end of the period you paid for and we don&apos;t refund partial periods unless the law requires it. Your
+          data and the full data export stay available on the free plan. You won&apos;t be charged without agreeing.
+        </p>
       </Section>
 
       <Section id="liability" title="8. Disclaimers and liability">

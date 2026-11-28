@@ -1,5 +1,6 @@
 "use client";
 
+import { PlusBadge, PlusRequiredNote } from "@/components/plus";
 import { Download, LogOut, Plus, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -111,6 +112,7 @@ export default function SettingsPage() {
               disabled={saving === "monthly"}
               onChange={(v) => patch("monthly", { digestMonthly: v })}
             />
+            {me.billing?.features.digests === false ? <PlusRequiredNote feature="digests" className="my-2" /> : null}
             <Toggle
               id="delete-originals"
               label="Delete original files after reading"
@@ -212,12 +214,14 @@ function ExportPanel() {
 }
 
 function TaxExport({ busy, onDownload }: { busy: string | null; onDownload: (path: string, name: string) => void }) {
+  const { me } = useSession();
+  const plusOnly = me.billing?.features.tax_export === false;
   const [thisYear] = useState(() => new Date().getFullYear());
   const [year, setYear] = useState(thisYear);
   const [tag, setTag] = useState("");
   return (
     <div className="mt-5 border-t border-line pt-4">
-      <p className="text-sm font-medium text-fg">Tax export (CSV)</p>
+      <p className="flex items-center gap-2 text-sm font-medium text-fg">Tax export (CSV) {plusOnly ? <PlusBadge /> : null}</p>
       <p className="mt-0.5 text-sm text-fg-muted">
         Transactions and receipt items you tagged tax deductible, business or HSA/FSA eligible, for one year. Handy for your accountant; not tax advice.
       </p>

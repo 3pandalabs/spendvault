@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { requirePlus } from "../lib/billing/entitlements.js";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
@@ -152,7 +153,7 @@ export async function receiptRoutes(fastify: FastifyInstance) {
 
   app.get(
     "/receipts/prices",
-    { preHandler: requireAuth, schema: { querystring: z.object({ q: z.string().trim().max(60).optional(), limit: z.coerce.number().int().min(1).max(100).default(30) }) } },
+    { preHandler: [requireAuth, requirePlus("price_tracker")], schema: { querystring: z.object({ q: z.string().trim().max(60).optional(), limit: z.coerce.number().int().min(1).max(100).default(30) }) } },
     async (req) => {
       const userId = req.userId!;
       const rows = await db

@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/lib/site";
 
-// Only the landing page and /privacy, /terms, /delete-account are public.
+// Only the landing page, /calculators and /privacy, /terms, /delete-account are public.
 // Authed pages also send `robots: { index: false }` from their layout.
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -17,6 +17,8 @@ export default function robots(): MetadataRoute.Robots {
           "/documents",
           "/setup",
           "/settings",
+          "/plan",
+          "/my-calculators",
           "/share",
           "/share-target",
           "/login",

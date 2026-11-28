@@ -1,17 +1,18 @@
 "use client";
 
-import { Gauge, Pencil, Plus, Sparkles, Trash2, Wallet } from "lucide-react";
+import { Gauge, Pencil, Plus, Repeat, Sparkles, Trash2, Wallet } from "lucide-react";
 import { useMemo, useState } from "react";
 import { delay, Eyebrow, INSIGHT_TABS, InfoTip, parseAmount, ProgressBar, SubTabs } from "@/components/app-ui";
 import { CategoryChip } from "@/components/bits";
-import { EmptyState, ErrorText, LoadError, PageHeader, Panel, PanelTitle, selectClass, Skeleton, Spinner } from "@/components/common";
+import { EmptyState, ErrorText, LoadError, PageHeader, Panel, PanelTitle, selectClass, Skeleton, Spinner, Toggle } from "@/components/common";
+import { PlusRequiredNote } from "@/components/plus";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { deleteBudget, errorMessage, getBudgets, listCategories, setBudget, setMonthlyBudget } from "@/lib/api";
+import { deleteBudget, errorMessage, getBudgets, isPlusRequired, listCategories, setBudget, setBudgetRollover, setMonthlyBudget, setMonthlyRollover } from "@/lib/api";
 import { fmtMonth, money } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
-import type { BudgetLine, Budgets } from "@/lib/types";
+import type { BudgetLine, Budgets, Rollover } from "@/lib/types";
 
 export default function BudgetsPage() {
   const budgets = useAsync(() => getBudgets(), "budgets");
@@ -37,24 +38,30 @@ function Body({ b, onChange }: { b: Budgets; onChange: (b: Budgets) => void }) {
   const cur = b.currency;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [needsPlus, setNeedsPlus] = useState(false);
   const over = b.items.filter((l) => l.status === "over").length;
 
   async function act(key: string, fn: () => Promise<Budgets | void>) {
     setBusy(key);
     setError(null);
+    setNeedsPlus(false);
     try {
       const next = await fn();
       if (next) onChange(next);
       else onChange(await getBudgets());
     } catch (e) {
-      setError(errorMessage(e));
+      if (isPlusRequired(e)) setNeedsPlus(true);
+      else setError(errorMessage(e));
     } finally {
       setBusy(null);
     }
   }
 
   const overall = b.monthlyBudget;
-  const overallProgress = overall ? b.totals.spent / overall : 0;
+  // With rollover the bar measures against budget + what carried over.
+  const overallAvailable = b.overall?.available ?? overall;
+  const overallRolled = b.overall?.rolledOver ?? 0;
+  const overallProgress = overallAvailable && overallAvailable > 0 ? b.totals.spent / overallAvailable : b.totals.spent > 0 ? 1 : 0;
   return (
     <div className="space-y-4">
       <section className="spa-tile spa-glow spa-in rounded-2xl p-5 sm:p-6">
@@ -69,12 +76,17 @@ function Body({ b, onChange }: { b: Budgets; onChange: (b: Budgets) => void }) {
           {money(b.totals.spent, cur)}
           <span className="text-base font-normal text-zinc-400">
             {" "}
-            spent{overall ? ` of ${money(overall, cur)}` : b.totals.budgeted ? ` · ${money(b.totals.budgeted, cur)} budgeted` : ""}
+            spent{overall ? ` of ${money(overallAvailable, cur)}` : b.totals.budgeted ? ` · ${money(b.totals.budgeted, cur)} budgeted` : ""}
           </span>
         </p>
+        {overall && overallRolled !== 0 ? <RolledOver amount={overallRolled} budget={overall} currency={cur} /> : null}
         {overall ? (
           <div className="mt-3 max-w-md">
-            <ProgressBar value={overallProgress} status={b.totals.spent > overall ? "over" : overallProgress >= 0.8 ? "near" : "ok"} label="Monthly budget used" />
+            <ProgressBar
+              value={overallProgress}
+              status={b.overall?.status ?? (b.totals.spent > overall ? "over" : overallProgress >= 0.8 ? "near" : "ok")}
+              label="Monthly budget used"
+            />
           </div>
         ) : null}
         <p className="mt-2 text-sm text-fg-muted">
@@ -85,9 +97,19 @@ function Body({ b, onChange }: { b: Budgets; onChange: (b: Budgets) => void }) {
               : "Every budgeted category is on track."}
         </p>
         <MonthlyBudget value={overall} currency={cur} busy={busy === "total"} onSave={(v) => act("total", () => setMonthlyBudget(v))} />
+        {overall && b.overall ? (
+          <RolloverSettings
+            id="total"
+            what="your monthly budget"
+            value={b.overall.rollover}
+            busy={busy === "total-rollover"}
+            onChange={(r) => act("total-rollover", () => setMonthlyRollover(r))}
+          />
+        ) : null}
       </section>
 
       <ErrorText>{error}</ErrorText>
+      {needsPlus ? <PlusRequiredNote feature="unlimited_budgets" /> : null}
 
       {b.items.length > 0 ? (
         <Panel className="spa-in" style={delay(0.05)}>
@@ -105,6 +127,8 @@ function Body({ b, onChange }: { b: Budgets; onChange: (b: Budgets) => void }) {
                 busy={busy === l.category}
                 onSave={(v) => act(l.category, () => setBudget(l.category, v))}
                 onDelete={() => act(l.category, () => deleteBudget(l.category))}
+                onRollover={(r) => act(`${l.category}-rollover`, () => setBudgetRollover(l.category, r))}
+                rolloverBusy={busy === `${l.category}-rollover`}
               />
             ))}
           </ul>
@@ -196,7 +220,76 @@ function MonthlyBudget({ value, currency, busy, onSave }: { value: number | null
   );
 }
 
-function BudgetRow({ line: l, currency, busy, onSave, onDelete }: { line: BudgetLine; currency: string; busy: boolean; onSave: (v: number) => void; onDelete: () => void }) {
+/** "Rolled over $40 from earlier months" (or the overspend carried in). */
+function RolledOver({ amount, budget, currency }: { amount: number; budget: number; currency: string }) {
+  return (
+    <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-fg-muted">
+      <Repeat className="size-3.5 text-amber-300" aria-hidden />
+      {amount > 0 ? (
+        <span>
+          Rolled over <span className="font-medium text-emerald-300">{money(amount, currency)}</span> unspent · {money(budget, currency)} budget
+        </span>
+      ) : (
+        <span>
+          Rolled over <span className="font-medium text-red-300">−{money(-amount, currency)}</span> overspent · {money(budget, currency)} budget
+        </span>
+      )}
+    </p>
+  );
+}
+
+/** Two switches: carry unspent money, carry overspending. */
+function RolloverSettings({ id, what, value, busy, onChange }: { id: string; what: string; value: Rollover; busy: boolean; onChange: (r: { unspent: boolean; overspend: boolean }) => void }) {
+  const [open, setOpen] = useState(false);
+  const on = value.unspent || value.overspend;
+  return (
+    <div className="mt-2">
+      <button type="button" className="inline-flex items-center gap-1.5 text-sm text-accent-strong hover:underline" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <Repeat className="size-3.5" aria-hidden /> Rollover{on ? ` on${value.since ? ` since ${fmtMonth(value.since)}` : ""}` : ""}
+        {busy ? <Spinner /> : null}
+      </button>
+      {open ? (
+        <div className="mt-1 max-w-md divide-y divide-line rounded-xl border border-white/10 px-3">
+          <Toggle
+            id={`${id}-rollover-unspent`}
+            checked={value.unspent}
+            disabled={busy}
+            onChange={(v) => onChange({ unspent: v, overspend: value.overspend })}
+            label="Carry unspent money into next month"
+            description={`What's left of ${what} at the end of the month is added to next month's.`}
+          />
+          <Toggle
+            id={`${id}-rollover-overspend`}
+            checked={value.overspend}
+            disabled={busy}
+            onChange={(v) => onChange({ unspent: value.unspent, overspend: v })}
+            label="Carry overspending too"
+            description="Going over takes that amount off next month's budget."
+          />
+          <p className="py-2 text-xs text-fg-muted">Counts from the month you switch it on, using what you actually spent. Turning both off resets it.</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function BudgetRow({
+  line: l,
+  currency,
+  busy,
+  onSave,
+  onDelete,
+  onRollover,
+  rolloverBusy,
+}: {
+  line: BudgetLine;
+  currency: string;
+  busy: boolean;
+  onSave: (v: number) => void;
+  onDelete: () => void;
+  onRollover: (r: { unspent: boolean; overspend: boolean }) => void;
+  rolloverBusy: boolean;
+}) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState(String(l.budget));
   return (
@@ -208,9 +301,10 @@ function BudgetRow({ line: l, currency, busy, onSave, onDelete }: { line: Budget
         </div>
         <span className="shrink-0 text-sm tabular">
           <span className="font-semibold">{money(l.spent, currency)}</span>
-          <span className="text-fg-muted"> / {money(l.budget, currency)}</span>
+          <span className="text-fg-muted"> / {money(l.available ?? l.budget, currency)}</span>
         </span>
       </div>
+      {l.rolledOver ? <RolledOver amount={l.rolledOver} budget={l.budget} currency={currency} /> : null}
       <div className="mt-2">
         <ProgressBar value={l.progress} status={l.status} label={`${l.label} budget used`} />
       </div>
@@ -244,6 +338,7 @@ function BudgetRow({ line: l, currency, busy, onSave, onDelete }: { line: Budget
           </span>
         )}
       </div>
+      {l.rollover ? <RolloverSettings id={l.category} what={`your ${l.label.toLowerCase()} budget`} value={l.rollover} busy={rolloverBusy} onChange={onRollover} /> : null}
     </li>
   );
 }

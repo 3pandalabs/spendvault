@@ -5,7 +5,8 @@ import { db } from "../../db/index.js";
 import { householdInvites, householdMembers, households, users } from "../../db/schema.js";
 import { env } from "../../env.js";
 import { randomToken, sha256Hex } from "../crypto.js";
-import { conflict, invalid, notFound } from "../errors.js";
+import { conflict, DomainError, invalid, notFound } from "../errors.js";
+import { anyOnPlus } from "../billing/entitlements.js";
 import { sendMail } from "../mailer.js";
 import { checkInvite, HOUSEHOLD_MAX_MEMBERS, INVITE_TTL_MS, inviteMail, normalizeEmail } from "./invite.js";
 
@@ -43,6 +44,8 @@ export async function scopeUserIds(userId: string, scope: "me" | "household" | u
   const m = await membershipOf(userId);
   if (!m) return { ids: [userId], members: [] };
   const members = await membersOf(m.householdId);
+  // Combined views need a Plus member in the household (lib/plan.ts; always true with BILLING=off).
+  if (!(await anyOnPlus(members.map((x) => x.userId)))) throw new DomainError("PLUS_REQUIRED", "plus_required");
   if (member && member !== "all") {
     if (!members.some((x) => x.userId === member)) throw notFound();
     return { ids: [member], members };

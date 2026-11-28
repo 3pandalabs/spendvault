@@ -8,7 +8,8 @@ import { env } from "../../env.js";
 import { sendMail } from "../mailer.js";
 import { toDbAmount, toNum } from "../money.js";
 import { buildDigest } from "./digest.js";
-import { loadBudgets, loadTxns } from "./load.js";
+import { loadBudgets, loadTxns, monthlyRolloverOf } from "./load.js";
+import { effectivePlan, hasFeature } from "../plan.js";
 import { detectSpikes } from "./spikes.js";
 import { addDays } from "./util.js";
 import { cardDueAlerts } from "./cards.js";
@@ -26,7 +27,14 @@ const log = (msg: string, fields: Record<string, string | number> = {}) =>
 /** Runs the detector for one user; inserts new alerts (dedupe on key). Returns how many were created. */
 export async function recomputeAlertsForUser(userId: string): Promise<number> {
   const [u] = await db
-    .select({ baseCurrency: users.baseCurrency, monthlyBudget: users.monthlyBudget, timezone: users.timezone })
+    .select({
+      baseCurrency: users.baseCurrency,
+      monthlyBudget: users.monthlyBudget,
+      timezone: users.timezone,
+      budgetRolloverUnspent: users.budgetRolloverUnspent,
+      budgetRolloverOverspend: users.budgetRolloverOverspend,
+      budgetRolloverSince: users.budgetRolloverSince,
+    })
     .from(users)
     .where(and(eq(users.id, userId), isNull(users.deletedAt)))
     .limit(1);
@@ -40,7 +48,7 @@ export async function recomputeAlertsForUser(userId: string): Promise<number> {
     syncRefundWatches(userId),
   ]);
   const candidates = [
-    ...detectSpikes({ txns, currency: u.baseCurrency, today, budgets: budgetRows, monthlyBudget: toNum(u.monthlyBudget) }),
+    ...detectSpikes({ txns, currency: u.baseCurrency, today, budgets: budgetRows, monthlyBudget: toNum(u.monthlyBudget), monthlyRollover: monthlyRolloverOf(u) }),
     // Reminders (0003): card dues, return windows/warranties, missing refunds, trials that turned paid.
     ...cardDueAlerts(dues, today),
     ...returnWindowAlerts(receiptRows, today),
@@ -132,12 +140,17 @@ async function sendPeriodDigests(now = new Date()): Promise<number> {
       lastWeeklyDigest: users.lastWeeklyDigest,
       lastMonthlyDigest: users.lastMonthlyDigest,
       createdAt: users.createdAt,
+      plan: users.plan,
+      planStatus: users.planStatus,
+      planRenewsAt: users.planRenewsAt,
     })
     .from(users)
     .where(and(isNull(users.deletedAt), sql`(${users.digestWeekly} OR ${users.digestMonthly})`))
     .limit(2000);
   let sent = 0;
   for (const u of rows) {
+    // Weekly/monthly summaries are a Plus feature (lib/plan.ts); BILLING=off → everyone.
+    if (!hasFeature(effectivePlan(u, env.BILLING, now), "digests")) continue;
     try {
       const tz = userTimeZone(u);
       const today = todayFor(u, now);

@@ -10,13 +10,15 @@ import { isCategory, NON_SPEND } from "../lib/categories.js";
 import { keyedLimiter } from "../lib/clientKey.js";
 import { invalid, notFound } from "../lib/errors.js";
 import { acceptInvite, cancelInvite, createInvite, householdEnabled, householdView, leaveHousehold, previewInvite } from "../lib/household/db.js";
-import { budgetLines, suggestBudgets, totalSpend } from "../lib/insights/budgets.js";
-import { loadBudgets, loadNetWorthInputs, loadTxns, netWorthItemView } from "../lib/insights/load.js";
+import { budgetLines, MAX_ROLLOVER_MONTHS, nextRollover, overallBudgetLine, suggestBudgets, totalSpend } from "../lib/insights/budgets.js";
+import { loadBudgets, loadNetWorthInputs, loadTxns, monthlyRolloverOf, netWorthItemView } from "../lib/insights/load.js";
 import { computeNetWorth } from "../lib/insights/networth.js";
 import { computeSubscriptions } from "../lib/insights/subscriptions.js";
 import { recomputeAlertsForUser } from "../lib/insights/sweep.js";
 import { addDays, addMonths, monthEnd, monthOf, monthStart, round2 } from "../lib/insights/util.js";
 import { todayFor } from "../lib/userTime.js";
+import { planOf, requirePlus } from "../lib/billing/entitlements.js";
+import { hasFeature, limitsFor, plusRequired } from "../lib/plan.js";
 import { toDbAmount, toNum } from "../lib/money.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,12 +28,19 @@ const inviteLimiter = keyedLimiter(10, 60 * 60_000);
 
 async function userBasics(userId: string) {
   const [u] = await db
-    .select({ baseCurrency: users.baseCurrency, monthlyBudget: users.monthlyBudget, timezone: users.timezone })
+    .select({
+      baseCurrency: users.baseCurrency,
+      monthlyBudget: users.monthlyBudget,
+      timezone: users.timezone,
+      budgetRolloverUnspent: users.budgetRolloverUnspent,
+      budgetRolloverOverspend: users.budgetRolloverOverspend,
+      budgetRolloverSince: users.budgetRolloverSince,
+    })
     .from(users)
     .where(and(eq(users.id, userId), isNull(users.deletedAt)))
     .limit(1);
   if (!u) throw notFound();
-  return { currency: u.baseCurrency, monthlyBudget: toNum(u.monthlyBudget), today: todayFor(u) };
+  return { currency: u.baseCurrency, monthlyBudget: toNum(u.monthlyBudget), today: todayFor(u), monthlyRollover: monthlyRolloverOf(u) };
 }
 
 /** Budget changes may cross a line right now: refresh alerts in the background. */
@@ -52,12 +61,15 @@ export async function planningRoutes(fastify: FastifyInstance) {
   // ---------------------------------------------------------------- budgets
 
   async function budgetsView(userId: string, month: string) {
-    const { currency, monthlyBudget, today } = await userBasics(userId);
+    const { currency, monthlyBudget, today, monthlyRollover } = await userBasics(userId);
     const cur = monthOf(today);
     const [lo, hi] = month < cur ? [month, cur] : [cur, month];
-    // The month shown plus the 3 complete months before today (suggestions).
-    const [rows, txns] = await Promise.all([loadBudgets(userId), loadTxns(userId, currency, monthStart(addMonths(lo, -4)), monthEnd(hi))]);
+    // The month shown plus the 3 complete months before today (suggestions),
+    // and up to MAX_ROLLOVER_MONTHS before the month shown (rollover).
+    const from = monthStart(addMonths(lo, -Math.max(4, MAX_ROLLOVER_MONTHS)));
+    const [rows, txns] = await Promise.all([loadBudgets(userId), loadTxns(userId, currency, from, monthEnd(hi))]);
     const items = budgetLines(txns, currency, month, rows);
+    const overallLine = overallBudgetLine(txns, currency, month, monthlyBudget, monthlyRollover);
     const spent = totalSpend(txns, currency, month);
     const budgeted = round2(rows.reduce((s, b) => s + b.amount, 0));
     return {
@@ -66,6 +78,14 @@ export async function planningRoutes(fastify: FastifyInstance) {
       monthlyBudget,
       totals: { budgeted, spent, spentInBudgeted: round2(items.reduce((s, l) => s + l.spent, 0)) },
       items,
+      overall: {
+        rolledOver: overallLine?.rolledOver ?? 0,
+        available: overallLine?.available ?? null,
+        remaining: overallLine?.remaining ?? null,
+        status: overallLine?.status ?? null,
+        rollover: monthlyRollover,
+      },
+      currentMonth: cur,
       suggestions: suggestBudgets({ txns, currency, today, existing: new Set(rows.map((r) => r.category)) }),
     };
   }
@@ -79,9 +99,16 @@ export async function planningRoutes(fastify: FastifyInstance) {
   app.put(
     "/budgets/:category",
     { preHandler: requireAuth, schema: { params: z.object({ category: z.string().max(40) }), body: z.object({ amount: money }) } },
-    async (req) => {
+    async (req, reply) => {
       const cat = req.params.category;
       if (!isCategory(cat) || NON_SPEND.has(cat)) throw invalid("invalid_category");
+      const plan = await planOf(req.userId!);
+      if (!hasFeature(plan, "unlimited_budgets")) {
+        // Free: up to FREE_LIMITS.budgets categories (BILLING=on only); editing an existing one is always fine.
+        const rows = await loadBudgets(req.userId!);
+        const cap = limitsFor(plan).budgets ?? Infinity;
+        if (!rows.some((r) => r.category === cat) && rows.length >= cap) return reply.code(402).send(plusRequired("unlimited_budgets"));
+      }
       await db
         .insert(budgets)
         .values({ userId: req.userId!, category: cat, amount: toDbAmount(req.body.amount) })
@@ -103,6 +130,39 @@ export async function planningRoutes(fastify: FastifyInstance) {
       return reply.code(204).send();
     },
   );
+
+  // Rollover (0005): carry unspent and/or overspent money into next month.
+  const rolloverBody = z.object({ unspent: z.boolean(), overspend: z.boolean() }).strict();
+
+  app.put(
+    "/budgets/:category/rollover",
+    { preHandler: requireAuth, schema: { params: z.object({ category: z.string().max(40) }), body: rolloverBody } },
+    async (req) => {
+      const userId = req.userId!;
+      const { today } = await userBasics(userId);
+      const [b] = await db.select().from(budgets).where(and(eq(budgets.userId, userId), eq(budgets.category, req.params.category))).limit(1);
+      if (!b) throw notFound();
+      const next = nextRollover({ unspent: b.rolloverUnspent, overspend: b.rolloverOverspend, since: b.rolloverSince }, req.body, monthOf(today));
+      await db
+        .update(budgets)
+        .set({ rolloverUnspent: next.unspent, rolloverOverspend: next.overspend, rolloverSince: next.since, updatedAt: new Date() })
+        .where(eq(budgets.id, b.id));
+      refreshAlerts(userId, (o, m) => req.log.warn(o, m));
+      return budgetsView(userId, monthOf(today));
+    },
+  );
+
+  app.put("/budgets-total/rollover", { preHandler: requireAuth, schema: { body: rolloverBody } }, async (req) => {
+    const userId = req.userId!;
+    const { today, monthlyRollover } = await userBasics(userId);
+    const next = nextRollover(monthlyRollover, req.body, monthOf(today));
+    await db
+      .update(users)
+      .set({ budgetRolloverUnspent: next.unspent, budgetRolloverOverspend: next.overspend, budgetRolloverSince: next.since })
+      .where(eq(users.id, userId));
+    refreshAlerts(userId, (o, m) => req.log.warn(o, m));
+    return budgetsView(userId, monthOf(today));
+  });
 
   // Overall monthly budget (also settable via PATCH /me).
   app.put(
@@ -181,7 +241,8 @@ export async function planningRoutes(fastify: FastifyInstance) {
 
   app.post(
     "/household/invites",
-    { preHandler: [requireAuth, needHousehold], schema: { body: z.object({ email: z.string().trim().email().max(200) }) } },
+    // Starting or growing a household is Plus; joining one a Plus member invited you to is free.
+    { preHandler: [requireAuth, needHousehold, requirePlus("household")], schema: { body: z.object({ email: z.string().trim().email().max(200) }) } },
     async (req, reply) => {
       if (!inviteLimiter(req.userId!)) return reply.code(429).send({ error: "rate_limited" });
       const r = await createInvite(req.userId!, req.body.email, (msg) => req.log.info({ userId: req.userId }, msg));
